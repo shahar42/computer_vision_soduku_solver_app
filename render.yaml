@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sudoku-recognizer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    repo: https://github.com/yourusername/sudoku-recognizer.git
+    branch: main
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.1

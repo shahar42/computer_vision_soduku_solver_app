@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+
+{% block title %}Sudoku Recognizer - Home{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2>Upload a Sudoku Puzzle</h2>
+            </div>
+            <div class="card-body">
+                <div class="upload-form">
+                    <h3 class="text-center mb-4">Upload a Sudoku Puzzle Image</h3>
+                    
+                    <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="text-center">
+                        <div class="mb-4">
+                            <label for="file" class="form-label">
+                                <div class="d-flex justify-content-center mb-3">
+                                    <i class="fas fa-camera fa-3x text-primary"></i>
+                                </div>
+                                Select an image of a Sudoku puzzle
+                            </label>
+                            <input type="file" class="form-control" id="file" name="file" accept=".jpg,.jpeg,.png,.bmp" required>
+                            <div class="form-text text-muted">
+                                Accepted formats: JPG, JPEG, PNG, BMP
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload"></i> Upload and Process
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div class="mt-4 text-center">
+                        <p class="text-muted">
+                            <small>
+                                For best results, ensure the entire Sudoku grid is visible and well-lit
+                            </small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>About</h2>
+            </div>
+            <div class="card-body">
+                <p>
+                    The Sudoku Recognizer is a computer vision system that can:
+                </p>
+                
+                <ul>
+                    <li>Detect Sudoku grids in photographs</li>
+                    <li>Extract individual cells from the grid</li>
+                    <li>Recognize digits in each cell</li>
+                    <li>Solve the Sudoku puzzle</li>
+                </ul>
+                
+                <p>
+                    The system uses a modular pipeline architecture with comprehensive defensive programming
+                    to handle all potential failure modes.
+                </p>
+                
+                <p>
+                    <a href="{{ url_for('manual_input') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-pencil-alt"></i> Try Manual Input
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

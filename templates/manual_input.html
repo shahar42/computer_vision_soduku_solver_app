@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+
+{% block title %}Sudoku Recognizer - Manual Input{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2>Manual Sudoku Input</h2>
+                <p class="text-muted">
+                    Enter the digits of the Sudoku puzzle you want to solve
+                </p>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('manual_input') }}" method="post">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <tbody>
+                                {% for i in range(9) %}
+                                <tr>
+                                    {% for j in range(9) %}
+                                    <td 
+                                        {% if (j + 1) % 3 == 0 and j < 8 %}style="border-right: 2px solid #333;"{% endif %} 
+                                        {% if (i + 1) % 3 == 0 and i < 8 %}style="border-bottom: 2px solid #333;"{% endif %}
+                                    >
+                                        <input 
+                                            type="text" 
+                                            name="cell_{{ i }}_{{ j }}" 
+                                            id="cell_{{ i }}_{{ j }}" 
+                                            maxlength="1" 
+                                            pattern="[1-9]" 
+                                            class="form-control"
+                                            style="width: 40px; height: 40px; text-align: center;"
+                                            inputmode="numeric"
+                                            autocomplete="off"
+                                        >
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <button type="button" class="btn btn-secondary" id="clearBtn">
+                            <i class="fas fa-eraser"></i> Clear
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-calculator"></i> Solve Puzzle
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-4">
+                    <div class="alert alert-info">
+                        <h5><i class="fas fa-info-circle"></i> Instructions:</h5>
+                        <ul>
+                            <li>Enter the known digits of the Sudoku puzzle</li>
+                            <li>Leave cells blank for unknown values</li>
+                            <li>Only digits 1-9 are accepted</li>
+                            <li>Click "Solve Puzzle" when ready</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    // Clear button
+    document.getElementById('clearBtn').addEventListener('click', function() {
+        const inputs = document.querySelectorAll('input[name^="cell_"]');
+        inputs.forEach(input => {
+            input.value = '';
+        });
+    });
+    
+    // Input validation - only allow digits 1-9
+    document.querySelectorAll('input[name^="cell_"]').forEach(input => {
+        input.addEventListener('input', function(e) {
+            const value = e.target.value;
+            if (value && !/^[1-9]$/.test(value)) {
+                e.target.value = '';
+            }
+        });
+    });
+</script>
+{% endblock %}
+{% endblock %}
