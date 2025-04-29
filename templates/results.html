@@ -30,9 +30,9 @@
                                     <td>Grid Detection</td>
                                     <td>
                                         {% if results.get('grid_detected', False) %}
-                                        <span class="text-success"><i class="fas fa-check-circle"></i> Success</span>
+                                        <span class="stage-success"><i class="fas fa-check-circle"></i> Success</span>
                                         {% else %}
-                                        <span class="text-danger"><i class="fas fa-times-circle"></i> Failed</span>
+                                        <span class="stage-failure"><i class="fas fa-times-circle"></i> Failed</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -40,9 +40,9 @@
                                     <td>Cell Extraction</td>
                                     <td>
                                         {% if results.get('cells_extracted', False) %}
-                                        <span class="text-success"><i class="fas fa-check-circle"></i> Success</span>
+                                        <span class="stage-success"><i class="fas fa-check-circle"></i> Success</span>
                                         {% else %}
-                                        <span class="text-danger"><i class="fas fa-times-circle"></i> Failed</span>
+                                        <span class="stage-failure"><i class="fas fa-times-circle"></i> Failed</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -51,9 +51,9 @@
                                     <td>Digit Recognition</td>
                                     <td>
                                         {% if results.get('digits_recognized', False) %}
-                                        <span class="text-success"><i class="fas fa-check-circle"></i> Success</span>
+                                        <span class="stage-success"><i class="fas fa-check-circle"></i> Success</span>
                                         {% else %}
-                                        <span class="text-danger"><i class="fas fa-times-circle"></i> Failed</span>
+                                        <span class="stage-failure"><i class="fas fa-times-circle"></i> Failed</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -61,9 +61,9 @@
                                     <td>Puzzle Solving</td>
                                     <td>
                                         {% if results.get('puzzle_solved', False) %}
-                                        <span class="text-success"><i class="fas fa-check-circle"></i> Success</span>
+                                        <span class="stage-success"><i class="fas fa-check-circle"></i> Success</span>
                                         {% else %}
-                                        <span class="text-danger"><i class="fas fa-times-circle"></i> Failed</span>
+                                        <span class="stage-failure"><i class="fas fa-times-circle"></i> Failed</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -72,13 +72,235 @@
                     </div>
                 </div>
 
-                <!-- Image preview -->
-                {% if results.get('file_path') %}
-                <div class="text-center mb-4">
-                    <h3>Uploaded Image</h3>
-                    <img src="{{ results.file_path }}" alt="Uploaded image" class="img-fluid" style="max-height: 500px;">
+                <!-- Tabs for different visualizations -->
+                <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+                    <!-- Original Tab (if not manual input) -->
+                    {% if not results.get('is_manual', False) and results.get('file_path') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="original-tab" data-bs-toggle="tab" data-bs-target="#original" type="button" role="tab" aria-controls="original" aria-selected="true">
+                            Original Image
+                        </button>
+                    </li>
+                    {% endif %}
+                    
+                    <!-- Grid Detection Tab (if available) -->
+                    {% if results.get('visualization_paths', {}).get('grid') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if results.get('is_manual', False) or not results.get('file_path') %}active{% endif %}" id="grid-tab" data-bs-toggle="tab" data-bs-target="#grid" type="button" role="tab" aria-controls="grid" aria-selected="{% if results.get('is_manual', False) or not results.get('file_path') %}true{% else %}false{% endif %}">
+                            Grid Detection
+                        </button>
+                    </li>
+                    {% endif %}
+                    
+                    <!-- Cells Tab (if available) -->
+                    {% if results.get('visualization_paths', {}).get('cells') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="cells-tab" data-bs-toggle="tab" data-bs-target="#cells" type="button" role="tab" aria-controls="cells" aria-selected="false">
+                            Extracted Cells
+                        </button>
+                    </li>
+                    {% endif %}
+                    
+                    <!-- Digits Tab (if available) -->
+                    {% if results.get('digits_recognized', False) and results.get('digit_grid') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if results.get('is_manual', True) and not results.get('visualization_paths', {}).get('grid') %}active{% endif %}" id="digits-tab" data-bs-toggle="tab" data-bs-target="#digits" type="button" role="tab" aria-controls="digits" aria-selected="{% if results.get('is_manual', True) and not results.get('visualization_paths', {}).get('grid') %}true{% else %}false{% endif %}">
+                            Recognized Digits
+                        </button>
+                    </li>
+                    {% endif %}
+                    
+                    <!-- Solution Tab (if available) -->
+                    {% if results.get('puzzle_solved', False) and results.get('solved_grid') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="solution-tab" data-bs-toggle="tab" data-bs-target="#solution" type="button" role="tab" aria-controls="solution" aria-selected="false">
+                            Solution
+                        </button>
+                    </li>
+                    {% endif %}
+                    
+                    <!-- Overlay Tab (if available) -->
+                    {% if results.get('visualization_paths', {}).get('overlay') %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="overlay-tab" data-bs-toggle="tab" data-bs-target="#overlay" type="button" role="tab" aria-controls="overlay" aria-selected="false">
+                            Solution Overlay
+                        </button>
+                    </li>
+                    {% endif %}
+                </ul>
+                
+                <!-- Tab content -->
+                <div class="tab-content mt-3" id="resultTabsContent">
+                    <!-- Original Tab Content -->
+                    {% if not results.get('is_manual', False) and results.get('file_path') %}
+                    <div class="tab-pane fade show active" id="original" role="tabpanel" aria-labelledby="original-tab">
+                        <div class="visualization-container text-center">
+                            <h4>Original Image</h4>
+                            <img src="{{ results.file_path }}" alt="Original image" class="img-fluid">
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Grid Detection Tab Content -->
+                    {% if results.get('visualization_paths', {}).get('grid') %}
+                    <div class="tab-pane fade {% if results.get('is_manual', False) or not results.get('file_path') %}show active{% endif %}" id="grid" role="tabpanel" aria-labelledby="grid-tab">
+                        <div class="visualization-container text-center">
+                            <h4>Detected Grid</h4>
+                            <img src="{{ results.visualization_paths.grid }}" alt="Detected grid" class="img-fluid">
+                            <p class="mt-2 text-muted">Green lines show the detected grid structure</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Cells Tab Content -->
+                    {% if results.get('visualization_paths', {}).get('cells') %}
+                    <div class="tab-pane fade" id="cells" role="tabpanel" aria-labelledby="cells-tab">
+                        <div class="visualization-container text-center">
+                            <h4>Extracted Cells</h4>
+                            <img src="{{ results.visualization_paths.cells }}" alt="Extracted cells" class="img-fluid">
+                            <p class="mt-2 text-muted">Each cell has been extracted and normalized</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Digits Tab Content -->
+                    {% if results.get('digits_recognized', False) and results.get('digit_grid') %}
+                    <div class="tab-pane fade {% if results.get('is_manual', True) and not results.get('visualization_paths', {}).get('grid') %}show active{% endif %}" id="digits" role="tabpanel" aria-labelledby="digits-tab">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="visualization-container text-center">
+                                    <h4>Recognized Digits</h4>
+                                    {% if results.get('visualization_paths', {}).get('digits') %}
+                                        <img src="{{ results.visualization_paths.digits }}" alt="Recognized digits" class="img-fluid">
+                                    {% else %}
+                                        <div class="sudoku-grid">
+                                            {% for i in range(9) %}
+                                            <div class="sudoku-row">
+                                                {% for j in range(9) %}
+                                                <div class="sudoku-cell sudoku-cell-initial 
+                                                    {% if (j + 1) % 3 == 0 and j < 8 %}sudoku-cell-border-right{% endif %} 
+                                                    {% if (i + 1) % 3 == 0 and i < 8 %}sudoku-cell-border-bottom{% endif %}">
+                                                    {{ results.digit_grid[i][j] if results.digit_grid[i][j] > 0 else "" }}
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Digit Recognition Statistics</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>
+                                            <strong>Total digits recognized:</strong> 
+                                            {{ results.digit_grid|flatten|selectattr('>', 0)|list|length }} / 81
+                                        </p>
+                                        
+                                        {% if results.get('confidence_grid') %}
+                                        <p>
+                                            <strong>Average confidence:</strong>
+                                            {{ (results.confidence_grid|flatten|sum / 81)|round(2) }}
+                                        </p>
+                                        
+                                        <div class="mt-3">
+                                            <h6>Confidence Levels:</h6>
+                                            <div class="d-flex mt-2">
+                                                <div class="p-2 confidence-high me-2"></div>
+                                                <div>High confidence (≥ 0.8)</div>
+                                            </div>
+                                            <div class="d-flex mt-1">
+                                                <div class="p-2 confidence-medium me-2"></div>
+                                                <div>Medium confidence (0.5 - 0.8)</div>
+                                            </div>
+                                            <div class="d-flex mt-1">
+                                                <div class="p-2 confidence-low me-2"></div>
+                                                <div>Low confidence (< 0.5)</div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Solution Tab Content -->
+                    {% if results.get('puzzle_solved', False) and results.get('solved_grid') %}
+                    <div class="tab-pane fade" id="solution" role="tabpanel" aria-labelledby="solution-tab">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="visualization-container text-center">
+                                    <h4>Puzzle Solution</h4>
+                                    {% if results.get('visualization_paths', {}).get('solution') %}
+                                        <img src="{{ results.visualization_paths.solution }}" alt="Puzzle solution" class="img-fluid">
+                                    {% else %}
+                                        <div class="sudoku-grid">
+                                            {% for i in range(9) %}
+                                            <div class="sudoku-row">
+                                                {% for j in range(9) %}
+                                                <div class="sudoku-cell 
+                                                    {% if results.digit_grid[i][j] > 0 %}sudoku-cell-initial{% else %}sudoku-cell-solved{% endif %}
+                                                    {% if (j + 1) % 3 == 0 and j < 8 %}sudoku-cell-border-right{% endif %} 
+                                                    {% if (i + 1) % 3 == 0 and i < 8 %}sudoku-cell-border-bottom{% endif %}">
+                                                    {{ results.solved_grid[i][j] }}
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <p class="mt-2 text-muted">
+                                        Black: Initial digits, Green: Solved digits
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5>Solver Information</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p>
+                                            <strong>Initial digits:</strong> 
+                                            {{ results.digit_grid|flatten|selectattr('>', 0)|list|length }} / 81
+                                        </p>
+                                        <p>
+                                            <strong>Filled digits:</strong> 
+                                            {{ results.solved_grid|flatten|selectattr('>', 0)|list|length }} / 81
+                                        </p>
+                                        <p>
+                                            <strong>Solving time:</strong>
+                                            {{ results.get('solving_time', results.processing_time)|round(4) }} seconds
+                                        </p>
+                                        
+                                        <div class="mt-3">
+                                            <a href="#" class="btn btn-outline-primary btn-sm" id="downloadSolution">
+                                                <i class="fas fa-download"></i> Download Solution
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Overlay Tab Content -->
+                    {% if results.get('visualization_paths', {}).get('overlay') %}
+                    <div class="tab-pane fade" id="overlay" role="tabpanel" aria-labelledby="overlay-tab">
+                        <div class="visualization-container text-center">
+                            <h4>Solution Overlay</h4>
+                            <img src="{{ results.visualization_paths.overlay }}" alt="Solution overlay" class="img-fluid">
+                            <p class="mt-2 text-muted">Green digits show the solved values overlaid on the original image</p>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
                 
                 <!-- Actions -->
                 <div class="mt-4 text-center">
@@ -90,4 +312,32 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Solution download handler
+    document.getElementById('downloadSolution')?.addEventListener('click', function(e) {
+        e.preventDefault();
+        
+        // Create solution text
+        let solutionText = '';
+        {% if results.get('solved_grid') %}
+            {% for row in results.solved_grid %}
+                solutionText += '{{ row|join("") }}\n';
+            {% endfor %}
+        {% endif %}
+        
+        // Create download link
+        const blob = new Blob([solutionText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'sudoku_solution.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+</script>
 {% endblock %}

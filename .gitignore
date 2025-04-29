@@ -1,13 +1,86 @@
-echo "__pycache__/
+# Python bytecode files
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Virtual environments
 .env
 .venv
 env/
 venv/
 ENV/
+venv310/
+
+# User-uploaded files and results
 uploads/
 results/
+
+# ML model files
 *.h5
-*.pkl" > .gitignore
+*.pkl
+# Additional model formats
+*.pb
+*.onnx
+*.tflite
+*.pt
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Training data and processed data
+data/models/
+data/processed/
+data/raw/
+
+# Logs
+*.log
+logs/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/

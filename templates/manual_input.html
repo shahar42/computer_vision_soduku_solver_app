@@ -14,42 +14,43 @@
             </div>
             <div class="card-body">
                 <form action="{{ url_for('manual_input') }}" method="post">
-                    <div class="table-responsive">
-                        <table class="table table-bordered">
-                            <tbody>
-                                {% for i in range(9) %}
-                                <tr>
-                                    {% for j in range(9) %}
-                                    <td 
-                                        {% if (j + 1) % 3 == 0 and j < 8 %}style="border-right: 2px solid #333;"{% endif %} 
-                                        {% if (i + 1) % 3 == 0 and i < 8 %}style="border-bottom: 2px solid #333;"{% endif %}
-                                    >
-                                        <input 
-                                            type="text" 
-                                            name="cell_{{ i }}_{{ j }}" 
-                                            id="cell_{{ i }}_{{ j }}" 
-                                            maxlength="1" 
-                                            pattern="[1-9]" 
-                                            class="form-control"
-                                            style="width: 40px; height: 40px; text-align: center;"
-                                            inputmode="numeric"
-                                            autocomplete="off"
+                    <div class="manual-input-grid">
+                        <div class="table-responsive">
+                            <table class="table table-bordered">
+                                <tbody>
+                                    {% for i in range(9) %}
+                                    <tr>
+                                        {% for j in range(9) %}
+                                        <td 
+                                            {% if (j + 1) % 3 == 0 and j < 8 %}style="border-right: 2px solid #333;"{% endif %} 
+                                            {% if (i + 1) % 3 == 0 and i < 8 %}style="border-bottom: 2px solid #333;"{% endif %}
                                         >
-                                    </td>
+                                            <input 
+                                                type="text" 
+                                                name="cell_{{ i }}_{{ j }}" 
+                                                id="cell_{{ i }}_{{ j }}" 
+                                                maxlength="1" 
+                                                pattern="[1-9]" 
+                                                class="form-control manual-input-cell"
+                                                inputmode="numeric"
+                                                autocomplete="off"
+                                            >
+                                        </td>
+                                        {% endfor %}
+                                    </tr>
                                     {% endfor %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="text-center mt-4">
-                        <button type="button" class="btn btn-secondary" id="clearBtn">
-                            <i class="fas fa-eraser"></i> Clear
-                        </button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-calculator"></i> Solve Puzzle
-                        </button>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="d-flex justify-content-center mt-4 gap-2">
+                            <button type="button" class="btn btn-secondary" id="clearBtn">
+                                <i class="fas fa-eraser"></i> Clear
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-calculator"></i> Solve Puzzle
+                            </button>
+                        </div>
                     </div>
                 </form>
                 
@@ -64,30 +65,128 @@
                         </ul>
                     </div>
                 </div>
+                
+                <div class="mt-4 text-center">
+                    <h5>Example Puzzles:</h5>
+                    <div class="d-flex justify-content-center gap-3 mt-3">
+                        <button type="button" class="btn btn-outline-secondary" id="easyExample">
+                            Easy
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="mediumExample">
+                            Medium
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="hardExample">
+                            Hard
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
 {% block extra_js %}
 <script>
+    // Helper to get all input cells
+    function getAllInputs() {
+        return document.querySelectorAll('input[name^="cell_"]');
+    }
+    
     // Clear button
     document.getElementById('clearBtn').addEventListener('click', function() {
-        const inputs = document.querySelectorAll('input[name^="cell_"]');
+        const inputs = getAllInputs();
         inputs.forEach(input => {
             input.value = '';
         });
     });
     
+    // Example puzzles
+    const examples = {
+        // Easy example
+        easy: [
+            "003010500",
+            "060000020",
+            "008506400",
+            "006102900",
+            "900704006",
+            "002609100",
+            "001203800",
+            "020000040",
+            "005080200"
+        ],
+        // Medium example
+        medium: [
+            "800000600",
+            "003400000",
+            "070080000",
+            "200005300",
+            "010070050",
+            "006100008",
+            "000030040",
+            "000006100",
+            "004000007"
+        ],
+        // Hard example
+        hard: [
+            "000700000",
+            "100000050",
+            "070010020",
+            "000000403",
+            "008060500",
+            "630000000",
+            "090050010",
+            "050000006",
+            "000008000"
+        ]
+    };
+    
+    // Load example functions
+    function loadExample(difficulty) {
+        const puzzle = examples[difficulty];
+        const inputs = getAllInputs();
+        
+        inputs.forEach((input, index) => {
+            const row = Math.floor(index / 9);
+            const col = index % 9;
+            const value = puzzle[row].charAt(col);
+            
+            input.value = value !== '0' ? value : '';
+        });
+    }
+    
+    // Example button event listeners
+    document.getElementById('easyExample').addEventListener('click', function() {
+        loadExample('easy');
+    });
+    
+    document.getElementById('mediumExample').addEventListener('click', function() {
+        loadExample('medium');
+    });
+    
+    document.getElementById('hardExample').addEventListener('click', function() {
+        loadExample('hard');
+    });
+    
     // Input validation - only allow digits 1-9
-    document.querySelectorAll('input[name^="cell_"]').forEach(input => {
+    getAllInputs().forEach(input => {
         input.addEventListener('input', function(e) {
             const value = e.target.value;
             if (value && !/^[1-9]$/.test(value)) {
                 e.target.value = '';
             }
         });
+        
+        // Auto-tab to next input
+        input.addEventListener('keyup', function(e) {
+            if (e.target.value && !e.ctrlKey && !e.altKey) {
+                const currentIndex = Array.from(getAllInputs()).indexOf(e.target);
+                const nextInput = getAllInputs()[currentIndex + 1];
+                if (nextInput) {
+                    nextInput.focus();
+                }
+            }
+        });
     });
 </script>
-{% endblock %}
 {% endblock %}

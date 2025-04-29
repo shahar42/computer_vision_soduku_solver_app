@@ -39,6 +39,78 @@
             box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
         }
         
+        .nav-tabs {
+            margin-bottom: 1rem;
+        }
+        
+        .sudoku-grid {
+            width: 100%;
+            max-width: 450px;
+            margin: 0 auto;
+            border: 2px solid #333;
+            background-color: white;
+        }
+        
+        .sudoku-row {
+            display: flex;
+            height: calc(100% / 9);
+        }
+        
+        .sudoku-cell {
+            flex: 1;
+            border: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            aspect-ratio: 1;
+        }
+        
+        .sudoku-cell-initial {
+            color: #000;
+        }
+        
+        .sudoku-cell-solved {
+            color: #28a745;
+        }
+        
+        .sudoku-cell-empty {
+            color: #ccc;
+        }
+        
+        .sudoku-cell-border-right {
+            border-right: 2px solid #333;
+        }
+        
+        .sudoku-cell-border-bottom {
+            border-bottom: 2px solid #333;
+        }
+        
+        .confidence-high {
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+        
+        .confidence-medium {
+            background-color: rgba(255, 193, 7, 0.1);
+        }
+        
+        .confidence-low {
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+        
+        .visualization-container {
+            margin-bottom: 2rem;
+        }
+        
+        .visualization-container img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        
         .upload-form {
             max-width: 600px;
             margin: 0 auto;
@@ -46,6 +118,27 @@
             padding: 2rem;
             border-radius: 8px;
             box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        
+        .manual-input-grid {
+            max-width: 450px;
+            margin: 0 auto;
+        }
+        
+        .manual-input-cell {
+            width: 45px;
+            height: 45px;
+            text-align: center;
+            font-size: 1.2rem;
+            padding: 0;
+        }
+        
+        .stage-success {
+            color: #28a745;
+        }
+        
+        .stage-failure {
+            color: #dc3545;
         }
     </style>
     
@@ -92,7 +185,7 @@
         {% block content %}{% endblock %}
         
         <footer class="footer">
-            <p>Sudoku Recognizer System &copy; 2023 - Built with defensive programming against all failure modes</p>
+            <p>Sudoku Recognizer System &copy; 2025 - Built with defensive programming against all failure modes</p>
         </footer>
     </div>
     

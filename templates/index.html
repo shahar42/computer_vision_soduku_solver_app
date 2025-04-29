@@ -7,72 +7,134 @@
     <div class="col-md-8">
         <div class="card">
             <div class="card-header">
-                <h2>Upload a Sudoku Puzzle</h2>
+                <ul class="nav nav-tabs card-header-tabs" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab" aria-controls="upload" aria-selected="true">
+                            <i class="fas fa-upload"></i> Upload Image
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual" type="button" role="tab" aria-controls="manual" aria-selected="false">
+                            <i class="fas fa-pencil-alt"></i> Manual Input
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="about-tab" data-bs-toggle="tab" data-bs-target="#about" type="button" role="tab" aria-controls="about" aria-selected="false">
+                            <i class="fas fa-info-circle"></i> About
+                        </button>
+                    </li>
+                </ul>
             </div>
             <div class="card-body">
-                <div class="upload-form">
-                    <h3 class="text-center mb-4">Upload a Sudoku Puzzle Image</h3>
-                    
-                    <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="text-center">
-                        <div class="mb-4">
-                            <label for="file" class="form-label">
-                                <div class="d-flex justify-content-center mb-3">
-                                    <i class="fas fa-camera fa-3x text-primary"></i>
+                <div class="tab-content" id="myTabContent">
+                    <!-- Upload Image Tab -->
+                    <div class="tab-pane fade show active" id="upload" role="tabpanel" aria-labelledby="upload-tab">
+                        <div class="upload-form">
+                            <h3 class="text-center mb-4">Upload a Sudoku Puzzle Image</h3>
+                            
+                            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="text-center">
+                                <div class="mb-4">
+                                    <label for="file" class="form-label">
+                                        <div class="d-flex justify-content-center mb-3">
+                                            <i class="fas fa-camera fa-3x text-primary"></i>
+                                        </div>
+                                        Select an image of a Sudoku puzzle
+                                    </label>
+                                    <input type="file" class="form-control" id="file" name="file" accept=".jpg,.jpeg,.png,.bmp" required>
+                                    <div class="form-text text-muted">
+                                        Accepted formats: JPG, JPEG, PNG, BMP
+                                    </div>
                                 </div>
-                                Select an image of a Sudoku puzzle
-                            </label>
-                            <input type="file" class="form-control" id="file" name="file" accept=".jpg,.jpeg,.png,.bmp" required>
-                            <div class="form-text text-muted">
-                                Accepted formats: JPG, JPEG, PNG, BMP
+                                
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-upload"></i> Upload and Process
+                                    </button>
+                                </div>
+                            </form>
+                            
+                            <div class="mt-4 text-center">
+                                <p class="text-muted">
+                                    <small>
+                                        For best results, ensure the entire Sudoku grid is visible and well-lit
+                                    </small>
+                                </p>
                             </div>
                         </div>
-                        
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-upload"></i> Upload and Process
-                            </button>
-                        </div>
-                    </form>
+                    </div>
                     
-                    <div class="mt-4 text-center">
-                        <p class="text-muted">
-                            <small>
-                                For best results, ensure the entire Sudoku grid is visible and well-lit
-                            </small>
+                    <!-- Manual Input Tab -->
+                    <div class="tab-pane fade" id="manual" role="tabpanel" aria-labelledby="manual-tab">
+                        <h3 class="text-center mb-4">Enter a Sudoku Puzzle Manually</h3>
+                        <p class="text-center mb-4">
+                            Enter the puzzle digits directly or
+                            <a href="{{ url_for('manual_input') }}">switch to the manual input page</a>
+                            for a larger grid.
                         </p>
+                    </div>
+                    
+                    <!-- About Tab -->
+                    <div class="tab-pane fade" id="about" role="tabpanel" aria-labelledby="about-tab">
+                        <h3 class="mb-3">About Sudoku Recognizer</h3>
+                        
+                        <p>
+                            The Sudoku Recognizer is a computer vision system that can:
+                        </p>
+                        
+                        <ul>
+                            <li>Detect Sudoku grids in photographs</li>
+                            <li>Extract individual cells from the grid</li>
+                            <li>Recognize digits in each cell</li>
+                            <li>Solve the Sudoku puzzle</li>
+                        </ul>
+                        
+                        <h4 class="mt-4 mb-3">System Architecture</h4>
+                        
+                        <p>
+                            The system uses a modular pipeline architecture with comprehensive defensive programming
+                            to handle all potential failure modes:
+                        </p>
+                        
+                        <ol>
+                            <li><strong>Grid Detection:</strong> Uses the "Drop of Water" approach to identify grid intersections</li>
+                            <li><strong>Cell Extraction:</strong> Applies perspective transforms to normalize cell images</li>
+                            <li><strong>Digit Recognition:</strong> Employs multiple classification models with fallback mechanisms</li>
+                            <li><strong>Puzzle Solving:</strong> Implements constraint propagation and backtracking algorithms</li>
+                        </ol>
+                        
+                        <h4 class="mt-4 mb-3">Defensive Programming</h4>
+                        
+                        <p>
+                            The system incorporates extensive defensive programming techniques:
+                        </p>
+                        
+                        <ul>
+                            <li>Input validation at every stage</li>
+                            <li>Graceful degradation with fallback mechanisms</li>
+                            <li>Multiple detection and recognition strategies</li>
+                            <li>Recovery protocols for all identified failure modes</li>
+                            <li>Comprehensive error handling and logging</li>
+                        </ul>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <div class="card">
-            <div class="card-header">
-                <h2>About</h2>
-            </div>
-            <div class="card-body">
-                <p>
-                    The Sudoku Recognizer is a computer vision system that can:
-                </p>
-                
-                <ul>
-                    <li>Detect Sudoku grids in photographs</li>
-                    <li>Extract individual cells from the grid</li>
-                    <li>Recognize digits in each cell</li>
-                    <li>Solve the Sudoku puzzle</li>
-                </ul>
-                
-                <p>
-                    The system uses a modular pipeline architecture with comprehensive defensive programming
-                    to handle all potential failure modes.
-                </p>
-                
-                <p>
-                    <a href="{{ url_for('manual_input') }}" class="btn btn-outline-primary">
-                        <i class="fas fa-pencil-alt"></i> Try Manual Input
-                    </a>
-                </p>
-            </div>
-        </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Preview uploaded image
+    document.getElementById('file').addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+            const fileSize = e.target.files[0].size / 1024 / 1024; // in MB
+            if (fileSize > 16) {
+                alert('File size exceeds 16MB limit');
+                this.value = '';
+                return;
+            }
+        }
+    });
+</script>
 {% endblock %}
