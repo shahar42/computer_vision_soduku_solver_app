@@ -22,11 +22,11 @@ T = TypeVar('T')
 # Base exception class for all system errors
 class SudokuRecognizerError(Exception):
     """Base exception class for all Sudoku Recognizer errors."""
-    
+
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         """
         Initialize exception with message and optional details.
-        
+
         Args:
             message: Error message
             details: Additional error details and context
@@ -109,17 +109,17 @@ class TimeoutError(SudokuRecognizerError):
 # Recovery results
 class RecoveryResult:
     """Result of a recovery attempt."""
-    
+
     def __init__(
-        self, 
-        success: bool, 
-        data: Any = None, 
+        self,
+        success: bool,
+        data: Any = None,
         error: Optional[Exception] = None,
         recovery_method: Optional[str] = None
     ):
         """
         Initialize recovery result.
-        
+
         Args:
             success: Whether recovery was successful
             data: Recovered data (if successful)
@@ -130,33 +130,33 @@ class RecoveryResult:
         self.data = data
         self.error = error
         self.recovery_method = recovery_method
-        
+
     def __bool__(self) -> bool:
         """Allow boolean evaluation based on success."""
         return self.success
 
 
 def log_error(
-    error: Exception, 
+    error: Exception,
     level: int = logging.ERROR,
     context: Optional[Dict[str, Any]] = None
 ) -> None:
     """
     Log an error with context and traceback.
-    
+
     Args:
         error: Exception to log
         level: Logging level
         context: Additional context information
     """
     ctx_str = f" [Context: {context}]" if context else ""
-    
+
     if isinstance(error, SudokuRecognizerError) and error.details:
         ctx_str += f" [Details: {error.details}]"
-    
+
     error_type = type(error).__name__
     error_tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-    
+
     logger.log(level, f"{error_type}: {str(error)}{ctx_str}\n{error_tb}")
 
 
@@ -169,14 +169,14 @@ def retry(
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Retry decorator with exponential backoff.
-    
+
     Args:
         max_attempts: Maximum number of attempts
         delay_seconds: Initial delay between retries in seconds
         backoff_factor: Multiplicative factor for backoff
         exceptions: Tuple of exceptions to catch and retry
         logger: Logger instance to use (uses module logger if None)
-        
+
     Returns:
         Decorated function with retry logic
     """
@@ -185,13 +185,13 @@ def retry(
         def wrapper(*args: Any, **kwargs: Any) -> T:
             local_logger = logger or logging.getLogger(func.__module__)
             last_exception = None
-            
+
             for attempt in range(1, max_attempts + 1):
                 try:
                     return func(*args, **kwargs)
                 except exceptions as e:
                     last_exception = e
-                    
+
                     if attempt < max_attempts:
                         wait_time = delay_seconds * (backoff_factor ** (attempt - 1))
                         local_logger.warning(
@@ -204,11 +204,11 @@ def retry(
                             f"All {max_attempts} attempts for {func.__name__} failed. "
                             f"Last error: {str(e)}"
                         )
-                        
+
             # If we get here, all attempts failed
             assert last_exception is not None
             raise last_exception
-            
+
         return wrapper
     return decorator
 
@@ -216,16 +216,16 @@ def retry(
 def timeout(seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Timeout decorator to limit execution time.
-    
+
     Note: This implementation uses signal, which only works on Unix systems.
     For Windows compatibility, consider using threading or multiprocessing.
-    
+
     Args:
         seconds: Maximum execution time in seconds
-        
+
     Returns:
         Decorated function with timeout logic
-        
+
     Raises:
         TimeoutError: If function execution exceeds the time limit
     """
@@ -233,23 +233,23 @@ def timeout(seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             import signal
-            
+
             def handler(signum: int, frame: Any) -> None:
                 raise TimeoutError(f"Function {func.__name__} timed out after {seconds} seconds")
-            
+
             # Set timeout handler
             old_handler = signal.signal(signal.SIGALRM, handler)
             signal.alarm(int(seconds))
-            
+
             try:
                 result = func(*args, **kwargs)
             finally:
                 # Restore previous handler and cancel alarm
                 signal.signal(signal.SIGALRM, old_handler)
                 signal.alarm(0)
-                
+
             return result
-            
+
         return wrapper
     return decorator
 
@@ -261,12 +261,12 @@ def fallback(
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Fallback decorator to use alternative function on failure.
-    
+
     Args:
         fallback_function: Function to call if primary function fails
         exceptions: Exceptions to catch and trigger fallback
         logger: Logger instance to use
-        
+
     Returns:
         Decorated function with fallback logic
     """
@@ -274,7 +274,7 @@ def fallback(
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             local_logger = logger or logging.getLogger(func.__module__)
-            
+
             try:
                 return func(*args, **kwargs)
             except exceptions as e:
@@ -283,7 +283,7 @@ def fallback(
                     f"Using fallback function {fallback_function.__name__}."
                 )
                 return fallback_function(*args, **kwargs)
-                
+
         return wrapper
     return decorator
 
@@ -291,11 +291,11 @@ def fallback(
 def robust_method(max_retries: int = 3, timeout_sec: float = 30.0) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Combined decorator for robust method execution with retry and timeout.
-    
+
     Args:
         max_retries: Maximum number of retry attempts
         timeout_sec: Maximum execution time in seconds
-        
+
     Returns:
         Decorated function with retry and timeout logic
     """
@@ -310,12 +310,12 @@ class ErrorHandler:
     """
     Error handler with recovery strategies.
     """
-    
+
     def __init__(self):
         """Initialize error handler with default recovery strategies."""
         # Set up default recovery strategies
         self._recovery_strategies: Dict[Type[Exception], List[Callable]] = {}
-        
+
     def register_recovery(
         self,
         exception_type: Type[Exception],
@@ -323,16 +323,16 @@ class ErrorHandler:
     ) -> None:
         """
         Register a recovery function for an exception type.
-        
+
         Args:
             exception_type: Exception type to handle
             recovery_func: Function to call for recovery
         """
         if exception_type not in self._recovery_strategies:
             self._recovery_strategies[exception_type] = []
-            
+
         self._recovery_strategies[exception_type].append(recovery_func)
-        
+
     def try_recover(
         self,
         error: Exception,
@@ -341,12 +341,12 @@ class ErrorHandler:
     ) -> RecoveryResult:
         """
         Try to recover from an error using registered strategies.
-        
+
         Args:
             error: Exception to recover from
             *args: Arguments to pass to recovery function
             **kwargs: Keyword arguments to pass to recovery function
-            
+
         Returns:
             RecoveryResult indicating success or failure
         """
@@ -355,14 +355,14 @@ class ErrorHandler:
             exc_type for exc_type in self._recovery_strategies.keys()
             if isinstance(error, exc_type)
         ]
-        
+
         if not matching_types:
             return RecoveryResult(False, error=error)
-            
+
         # Sort by specificity (most specific first)
         matching_types.sort(key=lambda t: len(t.__mro__), reverse=True)
         most_specific_type = matching_types[0]
-        
+
         # Try each recovery strategy in order
         for i, recovery_func in enumerate(self._recovery_strategies[most_specific_type]):
             try:
@@ -371,10 +371,10 @@ class ErrorHandler:
                 return RecoveryResult(True, data=result, recovery_method=recovery_func.__name__)
             except Exception as e:
                 logger.warning(f"Recovery strategy {recovery_func.__name__} failed: {str(e)}")
-                
+
         # If all strategies failed
         return RecoveryResult(False, error=error)
-        
+
     def handle_error(
         self,
         error: Exception,
@@ -384,19 +384,19 @@ class ErrorHandler:
     ) -> RecoveryResult:
         """
         Handle error with logging and recovery attempt.
-        
+
         Args:
             error: Exception to handle
             context: Error context for logging
             *args: Arguments for recovery functions
             **kwargs: Keyword arguments for recovery functions
-            
+
         Returns:
             RecoveryResult indicating success or failure
         """
         # Log the error
         log_error(error, context=context)
-        
+
         # Try to recover
         return self.try_recover(error, *args, **kwargs)
 
@@ -408,7 +408,7 @@ _error_handler: Optional[ErrorHandler] = None
 def get_error_handler() -> ErrorHandler:
     """
     Get global error handler instance, initializing if necessary.
-    
+
     Returns:
         ErrorHandler instance
     """
@@ -424,7 +424,7 @@ def register_recovery_strategy(
 ) -> None:
     """
     Register a recovery strategy with the global error handler.
-    
+
     Args:
         exception_type: Exception type to handle
         recovery_func: Function to call for recovery
@@ -442,17 +442,17 @@ def safe_execute(
 ) -> T:
     """
     Execute a function safely, converting all exceptions to a specific error type.
-    
+
     Args:
         func: Function to execute
         *args: Arguments to pass to function
         error_type: Type of error to raise on failure
         error_msg: Error message to use
         **kwargs: Keyword arguments to pass to function
-        
+
     Returns:
         Function result
-        
+
     Raises:
         The specified error_type with original exception details
     """
@@ -462,14 +462,14 @@ def safe_execute(
         if isinstance(e, error_type):
             # Preserve the original error if it's already the right type
             raise
-            
+
         # Create a new error of the specified type with details
         details = {
             "original_error": str(e),
             "original_type": type(e).__name__,
             "function": func.__name__
         }
-        
+
         raise error_type(f"{error_msg}: {str(e)}", details) from e
 
 
@@ -480,11 +480,11 @@ def setup_exception_handling() -> None:
     def global_exception_handler(
         exc_type: Type[BaseException],
         exc_value: BaseException,
-        exc_traceback: Optional[traceback.TracebackType]
+        exc_traceback: Optional[any]
     ) -> None:
         """
         Global handler for uncaught exceptions.
-        
+
         Args:
             exc_type: Exception type
             exc_value: Exception instance
@@ -494,12 +494,12 @@ def setup_exception_handling() -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-            
+
         # Log the error
         logger.critical(
             "Uncaught exception",
             exc_info=(exc_type, exc_value, exc_traceback)
         )
-    
+
     # Set the exception hook
     sys.excepthook = global_exception_handler
