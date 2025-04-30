@@ -6,6 +6,8 @@ Validation functions for Sudoku processing pipeline.
 import numpy as np
 import logging
 import cv2 # Added import for OpenCV functions
+import os # Added import for os functions (like path validation)
+import imghdr # Added import for image type checking
 from typing import List, Union, Tuple, Optional, Set # Added Optional and Set
 
 # Configure logging
@@ -24,6 +26,76 @@ class InvalidPuzzleError(ValueError):
     pass
 
 # --- Validation Functions ---
+
+def validate_file_exists(file_path: str) -> None:
+    """
+    Validates if a file exists at the given path.
+
+    Args:
+        file_path: The path to the file.
+
+    Raises:
+        FileNotFoundError: If the file does not exist or is not a file.
+        ValueError: If the file_path is None or empty.
+    """
+    if not file_path:
+        msg = "File path cannot be None or empty."
+        logger.error(msg)
+        raise ValueError(msg)
+
+    # Use absolute path for clearer error messages
+    abs_path = os.path.abspath(file_path)
+
+    if not os.path.exists(abs_path):
+        msg = f"File not found at path: {abs_path}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+
+    if not os.path.isfile(abs_path):
+        msg = f"Path exists but is not a file: {abs_path}"
+        logger.error(msg)
+        # Raise FileNotFoundError as the *file* requested wasn't found
+        raise FileNotFoundError(msg)
+
+    logger.debug(f"File exists validation passed for: {abs_path}")
+
+
+def validate_image_file(file_path: str) -> None:
+    """
+    Validates if a file is a recognizable image format.
+
+    Args:
+        file_path: The path to the file.
+
+    Raises:
+        ValueError: If the file is not a valid image or cannot be read.
+        FileNotFoundError: If the file doesn't exist (should be caught by validate_file_exists first).
+    """
+    # Basic check using imghdr
+    # Use absolute path for consistency
+    abs_path = os.path.abspath(file_path)
+    image_type = imghdr.what(abs_path)
+    if not image_type:
+        # imghdr might fail on some valid images or if permissions are wrong
+        logger.warning(f"imghdr could not determine image type for: {abs_path}. Proceeding with OpenCV check.")
+        # Don't raise error yet, rely on cv2.imread
+
+    # More robust check by trying to load with OpenCV
+    try:
+        img = cv2.imread(abs_path)
+        if img is None:
+            # This might happen for various reasons (corrupt file, permissions, unsupported format variant)
+            msg = f"OpenCV could not load the image file (it might be corrupt or unsupported): {abs_path}"
+            logger.error(msg)
+            raise ValueError(msg)
+    except Exception as e:
+        # Catch other potential errors during imread
+        msg = f"Error occurred while trying to read image file {abs_path}: {e}"
+        logger.error(msg)
+        raise ValueError(msg)
+
+    logger.debug(f"Image file validation passed for: {abs_path} (detected type via imghdr: {image_type})")
+
 
 def validate_cell_image(cell: Union[ImageType, None], min_std_dev: float = 5.0, min_size: int = 5) -> bool:
     """
@@ -50,15 +122,16 @@ def validate_cell_image(cell: Union[ImageType, None], min_std_dev: float = 5.0, 
         logger.debug(f"Cell image is not a NumPy array (type: {type(cell)}), validation failed.")
         return False
 
-    if cell.size < min_size * min_size:
-        logger.debug(f"Cell image size ({cell.shape}) is too small (< {min_size}x{min_size}), validation failed.")
-        return False
+    # Check size based on dimensions, not just total elements
+    if cell.ndim < 2 or cell.shape[0] < min_size or cell.shape[1] < min_size:
+         logger.debug(f"Cell image dimensions ({cell.shape}) are too small (< {min_size}x{min_size}), validation failed.")
+         return False
 
     # Check if the image has some variation (not just a solid color/blank)
     # Adjust threshold based on expected pixel value range (e.g., 0-255 or 0-1)
     try:
         # Ensure cell is not empty before calculating std dev
-        if cell.size == 0:
+        if cell.size == 0: # Should be caught by shape check above, but good failsafe
              logger.debug("Cell image is empty, validation failed.")
              return False
         std_dev = np.std(cell)
@@ -111,7 +184,7 @@ def validate_grid_values(grid: GridType) -> None:
         grid: 9x9 grid representing the Sudoku puzzle.
 
     Raises:
-        ValueError: If the grid has invalid dimensions or contains invalid values.
+        InvalidPuzzleError: If the grid has invalid dimensions or contains invalid values.
     """
     if not isinstance(grid, list) or len(grid) != 9 or not all(isinstance(row, list) and len(row) == 9 for row in grid):
         # Use InvalidPuzzleError for consistency if this check relates to puzzle validity
@@ -221,26 +294,30 @@ def normalize_image_size(
         # --- Upscaling based on min_size ---
         # Only upscale if the image is actually smaller than min_size after potential downscaling
         if min(h, w) < min_size:
-            if h < w:
-                scale_factor = min_size / h
+            # Avoid division by zero if h or w became 0 somehow
+            if h == 0 or w == 0:
+                 logger.warning("Cannot upscale image with zero dimension.")
             else:
-                scale_factor = min_size / w
+                if h < w:
+                    scale_factor = min_size / h
+                else:
+                    scale_factor = min_size / w
 
-            new_w = int(round(w * scale_factor))
-            new_h = int(round(h * scale_factor))
+                new_w = int(round(w * scale_factor))
+                new_h = int(round(h * scale_factor))
 
-            # Check if this upscaling violates the max_size constraint
-            if max(new_h, new_w) > max_size:
-                 logger.warning(f"Upscaling to min_size ({min_size}) would violate max_size ({max_size}). "
-                                f"Keeping current size: ({h}, {w}). Consider adjusting size limits.")
-                 # No resize happens here, return the potentially downscaled image
-            else:
-                # Ensure dimensions are at least 1 pixel
-                new_w = max(1, new_w)
-                new_h = max(1, new_h)
-                logger.debug(f"Upscaling image due to min_size. Current: ({h}, {w}), Target: ({new_h}, {new_w}), Scale: {scale_factor:.3f}")
-                current_image = cv2.resize(current_image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-                # overall_scale *= scale_factor # Replaced by final_scale calculation
+                # Check if this upscaling violates the max_size constraint
+                if max(new_h, new_w) > max_size:
+                     logger.warning(f"Upscaling to min_size ({min_size}) would violate max_size ({max_size}). "
+                                    f"Keeping current size: ({h}, {w}). Consider adjusting size limits.")
+                     # No resize happens here, return the potentially downscaled image
+                else:
+                    # Ensure dimensions are at least 1 pixel
+                    new_w = max(1, new_w)
+                    new_h = max(1, new_h)
+                    logger.debug(f"Upscaling image due to min_size. Current: ({h}, {w}), Target: ({new_h}, {new_w}), Scale: {scale_factor:.3f}")
+                    current_image = cv2.resize(current_image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                    # overall_scale *= scale_factor # Replaced by final_scale calculation
 
         # Calculate the final scale relative to the *original* image dimensions more reliably
         final_h, final_w = current_image.shape[:2]
@@ -348,8 +425,6 @@ def validate_homography_matrix(matrix: Optional[HomographyMatrixType]) -> None:
 
     logger.debug("Homography matrix validation passed.")
 
-# --- NEWLY ADDED FUNCTION (for solver) ---
-
 def validate_sudoku_rules(grid: GridType, check_zeros: bool = False) -> None:
     """
     Validate that a Sudoku grid follows the basic rules (row, column, box uniqueness).
@@ -404,6 +479,30 @@ def validate_sudoku_rules(grid: GridType, check_zeros: bool = False) -> None:
                         seen.add(val)
 
     logger.debug(f"Sudoku rules validation passed (check_zeros={check_zeros}).")
+
+
+def is_puzzle_solvable(grid: GridType) -> bool:
+    """
+    Performs a basic check if the initial puzzle state violates Sudoku rules.
+    Note: This does not guarantee a unique solution or any solution, only
+    that the initial state is not inherently contradictory.
+
+    Args:
+        grid: 9x9 grid representing the Sudoku puzzle.
+
+    Returns:
+        True if the grid does not violate basic rules, False otherwise.
+    """
+    try:
+        # Use validate_sudoku_rules, ignoring 0s for initial state check
+        validate_sudoku_rules(grid, check_zeros=False)
+        return True
+    except InvalidPuzzleError as e:
+        logger.warning(f"Initial puzzle state violates Sudoku rules: {e}")
+        return False
+    except Exception as e: # Catch other potential errors
+        logger.error(f"Unexpected error during puzzle solvability check: {e}")
+        return False # Treat unexpected errors as potentially unsolvable
 
 
 # --- Add any other validation functions needed below ---
