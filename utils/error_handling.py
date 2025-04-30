@@ -480,7 +480,7 @@ def setup_exception_handling() -> None:
     def global_exception_handler(
         exc_type: Type[BaseException],
         exc_value: BaseException,
-        exc_traceback: Optional[any]
+        exc_traceback: Optional[Any]
     ) -> None:
         """
         Global handler for uncaught exceptions.
