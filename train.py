@@ -14,7 +14,7 @@ import time
 import numpy as np
 from typing import Dict, List, Any, Optional
 
-from config import initialize_settings
+from config.settings import initialize_settings
 from utils.data_preparation import (
     load_dataset, prepare_training_data, normalize_cell_images
 )

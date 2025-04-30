@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from ..config import get_settings
+from config import get_settings
 
 # Define types
 ImageType = np.ndarray

@@ -14,11 +14,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 from collections import defaultdict, deque
 
 from . import SolverBase
-from ..config import get_settings
-from ..utils.error_handling import (
+from config import get_settings
+from utils.error_handling import (
     SolverError, InvalidPuzzleError, TimeoutError, retry, fallback, robust_method
 )
-from ..utils.validation import validate_grid_values, validate_sudoku_rules
+from utils.validation import validate_grid_values, validate_sudoku_rules
 
 # Define types
 GridType = List[List[int]]

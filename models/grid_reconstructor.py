@@ -17,11 +17,11 @@ from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 
 from . import GridReconstructorBase
-from ..config import get_settings
-from ..utils.error_handling import (
+from config import get_settings
+from utils.error_handling import (
     GridReconstructionError, retry, fallback, robust_method, safe_execute
 )
-from ..utils.validation import validate_points, validate_homography_matrix
+from utils.validation import validate_points, validate_homography_matrix
 
 # Define types
 PointType = Tuple[int, int]

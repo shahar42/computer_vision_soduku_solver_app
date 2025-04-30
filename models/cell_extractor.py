@@ -13,11 +13,11 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from . import CellExtractorBase
-from ..config import get_settings
-from ..utils.error_handling import (
+from config import get_settings
+from utils.error_handling import (
     CellExtractionError, retry, fallback, robust_method, safe_execute
 )
-from ..utils.validation import validate_image, validate_points, validate_cell_image
+from utils.validation import validate_image, validate_points, validate_cell_image
 
 # Define types
 ImageType = np.ndarray

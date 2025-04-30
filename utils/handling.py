@@ -12,7 +12,7 @@ import numpy as np
 import cv2
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from ..utils.error_handling import (
+from utils.error_handling import (
     ImageFormatError, ImageLoadError, SudokuRecognizerError, InvalidPuzzleError
 )
 

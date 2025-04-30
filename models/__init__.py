@@ -8,7 +8,7 @@ import abc
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from ..utils.error_handling import SudokuRecognizerError
+from utils.error_handling import SudokuRecognizerError
 
 # Define common types
 ImageType = np.ndarray  # OpenCV image (numpy array)

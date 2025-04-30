@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from .default_fallbacks import DEFAULT_CONFIG, CRITICAL_THRESHOLDS
-from ..utils.error_handling import ConfigError
+from utils.error_handling import ConfigError
 
 # Configure logging
 logger = logging.getLogger(__name__)

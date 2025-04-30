@@ -13,8 +13,8 @@ import random
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from ..config import get_settings
-from ..utils.error_handling import SudokuRecognizerError
+from config import get_settings
+from utils.error_handling import SudokuRecognizerError
 
 # Define types
 ImageType = np.ndarray

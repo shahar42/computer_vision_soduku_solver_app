@@ -21,11 +21,11 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 
 from . import DigitRecognizerBase
-from ..config import get_settings
-from ..utils.error_handling import (
+from config import get_settings
+from utils.error_handling import (
     DigitRecognitionError, retry, fallback, robust_method, safe_execute
 )
-from ..utils.validation import validate_cell_image, validate_grid_values
+from utils.validation import validate_cell_image, validate_grid_values
 
 # Define types
 ImageType = np.ndarray

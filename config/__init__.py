@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from .default_fallbacks import DEFAULT_CONFIG
-from ..utils.error_handling import ConfigError
+from utils.error_handling import ConfigError
 
 # Configure logging
 logging.basicConfig(

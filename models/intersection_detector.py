@@ -20,11 +20,11 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 from . import IntersectionDetectorBase
-from ..config import get_settings
-from ..utils.error_handling import (
+from config import get_settings
+from utils.error_handling import (
     IntersectionDetectionError, retry, fallback, robust_method, safe_execute
 )
-from ..utils.validation import (
+from utils.validation import (
     validate_image, is_valid_intersection_point, normalize_image_size
 )
 
