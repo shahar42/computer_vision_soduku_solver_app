@@ -18,7 +18,7 @@ from models.grid_reconstructor import RobustGridReconstructor
 from models.cell_extractor import RobustCellExtractor
 from models.digit_recognizer import RobustDigitRecognizer
 from models.solver import RobustSolver
-from config import get_settings
+from config.settings import get_settings
 from utils.error_handling import (
     SudokuRecognizerError, ImageLoadError, DetectionError, IntersectionDetectionError,
     GridReconstructionError, CellExtractionError, DigitRecognitionError, SolverError,
