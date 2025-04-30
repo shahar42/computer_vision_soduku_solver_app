@@ -20,6 +20,7 @@ from utils.error_handling import SudokuRecognizerError
 ImageType = np.ndarray
 PointType = Tuple[int, int]
 GridType = List[List[int]]
+GridPointsType: TypeAlias = List[List[PointType]]
 
 # Configure logging
 logger = logging.getLogger(__name__)
