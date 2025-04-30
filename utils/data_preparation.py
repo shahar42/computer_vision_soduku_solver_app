@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import random
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast, TypeAlias
 
 from config.settings import get_settings
 from utils.error_handling import SudokuRecognizerError
