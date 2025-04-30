@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 from collections import defaultdict, deque
 
 from . import SolverBase
-from config import get_settings
+from config.settings import get_settings
 from utils.error_handling import (
     SolverError, InvalidPuzzleError, TimeoutError, retry, fallback, robust_method
 )

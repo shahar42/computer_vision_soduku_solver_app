@@ -17,7 +17,7 @@ from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 
 from . import GridReconstructorBase
-from config import get_settings
+from config.settings import get_settings
 from utils.error_handling import (
     GridReconstructionError, retry, fallback, robust_method, safe_execute
 )
