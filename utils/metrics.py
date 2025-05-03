@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
-from config import get_settings
+from config import get_setting
 
 # Define types
 ImageType = np.ndarray
