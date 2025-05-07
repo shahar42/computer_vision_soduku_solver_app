@@ -17,7 +17,6 @@ uploads/
 results/
 
 # ML model files
-*.h5
 *.pkl
 # Additional model formats
 *.pb
@@ -30,9 +29,6 @@ results/
 *.ipynb_checkpoints/
 
 # Training data and processed data
-data/models/
-data/processed/
-data/raw/
 
 # Logs
 *.log
