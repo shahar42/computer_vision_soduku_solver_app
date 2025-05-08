@@ -893,7 +893,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
 
             logger.info(f"Detected {len(filtered_points)} intersections")
             # MODIFICATION: Adjust points based on the described offset
-            filtered_points = [(x + 12, y + 15) for x, y in filtered_points]
+            filtered_points = [(x + 2, y + 2) for x, y in filtered_points]
             return filtered_points
 
         except Exception as e:
