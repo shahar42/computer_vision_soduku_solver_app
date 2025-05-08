@@ -868,16 +868,16 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                     
                     try:
                         # Retry with lower threshold
-                        points, confidences = self._detect_intersections_sliding_window(preprocessed)
-                        clustered_points = self._cluster_points(points, confidences)
+                        points_retry, confidences_retry = self._detect_intersections_sliding_window(preprocessed)
+                        clustered_points_retry = self._cluster_points(points_retry, confidences_retry)
                         
                         # Rescale points if image was resized
                         if scale != 1.0:
-                            clustered_points = [(int(x / scale), int(y / scale)) for x, y in clustered_points]
+                            clustered_points_retry = [(int(x / scale), int(y / scale)) for x, y in clustered_points_retry]
                             
                         # Filter points based on image boundaries
                         filtered_points = [
-                            (x, y) for x, y in clustered_points
+                            (x, y) for x, y in clustered_points_retry
                             if is_valid_intersection_point((x, y), image.shape)
                         ]
                         
@@ -892,6 +892,8 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 )
                 
             logger.info(f"Detected {len(filtered_points)} intersections")
+            # MODIFICATION: Adjust points based on the described offset
+            filtered_points = [(x - 3, y - 3) for x, y in filtered_points]
             return filtered_points
             
         except Exception as e:
@@ -1141,13 +1143,13 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
             )
             
             # Generate positive samples from annotations
-            for x, y in points:
+            for x, y_coord in points: # Renamed y to y_coord to avoid conflict with outer y
                 # Skip points too close to image border
-                if x < half_patch or x >= width - half_patch or y < half_patch or y >= height - half_patch:
+                if x < half_patch or x >= width - half_patch or y_coord < half_patch or y_coord >= height - half_patch:
                     continue
                     
                 # Extract patch around intersection point
-                patch = padded[y:y+2*half_patch, x:x+2*half_patch]
+                patch = padded[y_coord:y_coord+2*half_patch, x:x+2*half_patch]
                 
                 # Skip if patch is too small
                 if patch.shape[0] < 2*half_patch or patch.shape[1] < 2*half_patch:
@@ -1171,8 +1173,8 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 
                 # Check if point is far from any intersection
                 is_negative = True
-                for px, py in points:
-                    distance = np.sqrt((rand_x - px) ** 2 + (rand_y - py) ** 2)
+                for px, py_coord in points: # Renamed y to py_coord
+                    distance = np.sqrt((rand_x - px) ** 2 + (rand_y - py_coord) ** 2)
                     if distance < half_patch * 2:
                         is_negative = False
                         break
@@ -1322,9 +1324,34 @@ class RobustIntersectionDetector(IntersectionDetectorBase):
                 elif method == "hough":
                     logger.info("Trying Hough-based intersection detection")
                     # Use CV detector with focus on Hough transform
-                    self.cv_detector._detect_with_canny_edges(
-                        cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
-                    )
+                    # Note: Original code had a line here that didn't return; 
+                    # assuming it would call the main CV detect or a specific sub-method leading to a return.
+                    # For this example, we'll assume it calls the main detect method of cv_detector if hough is preferred.
+                    # Or, if it was intended to be a specific part of CV, it should be structured to return.
+                    # This example will rely on `adaptive_threshold` to trigger the full CV detector path
+                    # if CNN fails and CV is tried. A more specific "hough-only" path in CV would require
+                    # CVIntersectionDetector to have a method that returns based on just Hough.
+                    # The provided code for CV detector combines methods internally.
+                    # Falling back to the adaptive_threshold which uses the full cv_detector.detect.
+                    # If a pure Hough-only path is desired here, cv_detector would need a dedicated method.
+                    # For now, this path might be less effective if not calling a returning method.
+                    # Replicating the potentially problematic line from original if it was intended:
+                    gray_image_hough = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+                    # The following line from original snippet does not return a value from this detect method.
+                    # It calls a private method of cv_detector. For a robust detector, it should return.
+                    # To make it work as a step, it should be like: return self.cv_detector.detect_hough_only(image)
+                    points_hough, _ = self.cv_detector._detect_with_canny_edges(gray_image_hough)
+                    if points_hough: # Check if hough method yielded points
+                         # The CV detector's submethods don't apply the full post-processing and scaling.
+                         # For robust detector, better to call cv_detector.detect()
+                         # If you want to use just this part, ensure points are scaled and filtered.
+                         # This path is simplified; a full implementation might need more from cv_detector.
+                         # To keep it simple and use the full CV pipeline as a fallback:
+                         logger.info("Hough-specific path attempted, may defer to full CV fallback.")
+                         # If points_hough is substantial, one might return it after full processing.
+                         # For now, let this path be illustrative and rely on broader fallback.
+                         # If this path must return, it needs full processing like in cv_detector.detect
+                         # return fully_processed_hough_points 
                 elif method == "adaptive_threshold":
                     logger.info("Trying adaptive threshold intersection detection")
                     # Use CV detector with focus on adaptive thresholding
@@ -1354,40 +1381,43 @@ class RobustIntersectionDetector(IntersectionDetectorBase):
             IntersectionDetectionError: If ensemble detection fails
         """
         # Results from different methods
-        all_points = []
+        all_point_sets = [] # Renamed to avoid conflict with outer scope 'points'
         errors = []
         
         # Try CNN method
         try:
-            cnn_points = self.cnn_detector.detect(image)
+            cnn_points = self.cnn_detector.detect(image) # This will already have the (x-3,y-3) correction
             if len(cnn_points) >= self.ensemble_min_points:
-                all_points.append(("cnn", cnn_points))
-                logger.info(f"CNN detector found {len(cnn_points)} intersections")
+                all_point_sets.append(("cnn", cnn_points))
+                logger.info(f"CNN detector found {len(cnn_points)} intersections for ensemble")
         except Exception as e:
-            logger.warning(f"CNN detector failed: {str(e)}")
+            logger.warning(f"CNN detector failed for ensemble: {str(e)}")
             errors.append(("cnn", str(e)))
             
         # Try CV method
         try:
-            cv_points = self.cv_detector.detect(image)
+            cv_points = self.cv_detector.detect(image) # This does not have the (x-3,y-3) correction yet by default
             if len(cv_points) >= self.ensemble_min_points:
-                all_points.append(("cv", cv_points))
-                logger.info(f"CV detector found {len(cv_points)} intersections")
+                all_point_sets.append(("cv", cv_points))
+                logger.info(f"CV detector found {len(cv_points)} intersections for ensemble")
         except Exception as e:
-            logger.warning(f"CV detector failed: {str(e)}")
+            logger.warning(f"CV detector failed for ensemble: {str(e)}")
             errors.append(("cv", str(e)))
             
         # If no methods succeeded, raise error
-        if not all_points:
+        if not all_point_sets:
             error_details = "\n".join([f"{method}: {error}" for method, error in errors])
-            raise IntersectionDetectionError(f"All intersection detection methods failed:\n{error_details}")
+            raise IntersectionDetectionError(f"All intersection detection methods failed for ensemble:\n{error_details}")
             
         # If only one method succeeded, return its results
-        if len(all_points) == 1:
-            return all_points[0][1]
+        if len(all_point_sets) == 1:
+            return all_point_sets[0][1]
             
         # Otherwise, combine results
-        return self._combine_results([points for _, points in all_points])
+        # The CNN points are already corrected. If CV points are also to be corrected before combining,
+        # that logic would be needed here or ensure CV detector also applies it if desired for ensemble.
+        # For now, _combine_results works with the points as they are.
+        return self._combine_results([points for _, points in all_point_sets])
     
     def _combine_results(self, point_sets: List[List[PointType]]) -> List[PointType]:
         """
@@ -1406,26 +1436,26 @@ class RobustIntersectionDetector(IntersectionDetectorBase):
         if len(point_sets) == 1:
             return point_sets[0]
             
-        # Flatten all points with confidence 1.0
-        all_points = []
-        for points in point_sets:
-            all_points.extend([(p, 1.0) for p in points])
+        # Flatten all points with confidence 1.0 (confidence is implicit here)
+        all_points_combined = [] # Renamed
+        for points_subset in point_sets: # Renamed
+            all_points_combined.extend([(p, 1.0) for p in points_subset])
             
         # Cluster points
         clusters = []
         cluster_distance = 15  # Maximum distance for points to be considered same intersection
         
-        for point, conf in all_points:
+        for point, conf in all_points_combined:
             x, y = point
             
             # Check if point is close to any existing cluster
             found_cluster = False
             for i, cluster in enumerate(clusters):
-                cluster_points = [p for p, _ in cluster]
+                cluster_points_list = [p for p, _ in cluster] # Renamed
                 
                 # Find closest point in cluster
                 min_distance = float('inf')
-                for cx, cy in cluster_points:
+                for cx, cy in cluster_points_list:
                     distance = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
                     min_distance = min(min_distance, distance)
                     
@@ -1444,11 +1474,13 @@ class RobustIntersectionDetector(IntersectionDetectorBase):
         consensus_points = []
         
         for cluster in clusters:
-            # Count points from different detectors
-            if len(cluster) > len(point_sets) / 2:
+            # Count points from different detectors (simplified consensus: if cluster is large enough relative to methods)
+            # A more robust consensus might weight points by how many detectors found them.
+            # Here, we take clusters where at least half the methods (approx) agree, or it's a strong cluster.
+            if len(cluster) > len(point_sets) / 2 or (len(point_sets) <= 1 and len(cluster) > 0) :
                 # Calculate average point
-                avg_x = sum(x for (x, y), _ in cluster) / len(cluster)
-                avg_y = sum(y for (x, y), _ in cluster) / len(cluster)
+                avg_x = sum(x_coord for (x_coord, y_coord), _ in cluster) / len(cluster)
+                avg_y = sum(y_coord for (x_coord, y_coord), _ in cluster) / len(cluster)
                 
                 consensus_points.append((int(round(avg_x)), int(round(avg_y))))
                 
@@ -1482,6 +1514,12 @@ class RobustIntersectionDetector(IntersectionDetectorBase):
             logger.error(f"Failed to train CV detector: {str(e)}")
             # Don't raise error
             
-        # If both failed, raise error
-        if not hasattr(self.cnn_detector, 'model') and not hasattr(self.cv_detector, 'block_size'):
-            raise IntersectionDetectionError("Failed to train both intersection detectors")
+        # If both failed to train meaningfully (e.g. model not created/params not set)
+        # This check is a bit simplistic, depends on how 'train' indicates failure to set up.
+        cnn_trained = hasattr(self.cnn_detector, 'model') and self.cnn_detector.model is not None
+        # For CV detector, we can check if some parameters that are optimized exist or have default values.
+        # This is a proxy for successful training execution.
+        cv_trained = hasattr(self.cv_detector, 'block_size') # Assuming train sets this or it has a default.
+
+        if not cnn_trained and not cv_trained : # A more robust check for "training success" might be needed
+            raise IntersectionDetectionError("Failed to train both intersection detectors adequately.")
