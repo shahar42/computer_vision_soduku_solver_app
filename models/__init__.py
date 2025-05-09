@@ -7,6 +7,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 import abc
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
+import loging
 
 from utils.error_handling import SudokuRecognizerError
 
