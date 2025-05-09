@@ -27,40 +27,35 @@ GridPointsType = List[List[PointType]]
 # Configure logging
 logger = logging.getLogger(__name__)
 
-
 class PerspectiveCellExtractor(CellExtractorBase):
     """
-    Perspective transform-based cell extractor.
+    Perspective transform-based cell extractor with minimal processing.
 
     This class extracts cell images from a Sudoku grid using perspective
-    transformation to correct distortion and normalize cell size.
+    transformation to correct distortion and normalize cell size while
+    preserving digit features.
     """
 
     def __init__(self):
-        """Initialize perspective cell extractor with default parameters."""
+        """Initialize perspective cell extractor with gentle parameters."""
         self.settings = get_settings().get_nested("cell_extractor")
 
         # Cell parameters
         self.cell_size = self.settings.get("cell_size", 28)
-        self.border_padding = self.settings.get("border_padding", 0.08)
+        self.border_padding = self.settings.get("border_padding", 0.05)  # Minimal border padding
 
-        # Image enhancement options
+        # Processing flags - most disabled by default for better feature preservation
         self.perspective_correction = self.settings.get("perspective_correction", True)
-        self.contrast_enhancement = self.settings.get("contrast_enhancement", False)
-        self.noise_reduction = self.settings.get("noise_reduction", True)
-        self.adaptive_thresholding = self.settings.get("adaptive_thresholding", True)
-        self.histogram_equalization = self.settings.get("histogram_equalization", False)
+        self.contrast_enhancement = self.settings.get("contrast_enhancement", False)  # Disabled
+        self.noise_reduction = self.settings.get("noise_reduction", False)  # Disabled
+        self.adaptive_thresholding = self.settings.get("adaptive_thresholding", False)  # Disabled
+        self.histogram_equalization = self.settings.get("histogram_equalization", False)  # Disabled
+
+        # Extraction mode - 'preserve' keeps original grayscale values
+        self.extraction_mode = self.settings.get("extraction_mode", "preserve")
 
     def load(self, model_path: str) -> bool:
-        """
-        Load model parameters from file.
-
-        Args:
-            model_path: Path to parameter file
-
-        Returns:
-            True if successful
-        """
+        """Load model parameters from file."""
         try:
             if os.path.exists(model_path):
                 with open(model_path, 'rb') as f:
@@ -82,15 +77,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
             return False
 
     def save(self, model_path: str) -> bool:
-        """
-        Save model parameters to file.
-
-        Args:
-            model_path: Path to save parameter file
-
-        Returns:
-            True if successful
-        """
+        """Save model parameters to file."""
         try:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -103,7 +90,8 @@ class PerspectiveCellExtractor(CellExtractorBase):
                 'contrast_enhancement': self.contrast_enhancement,
                 'noise_reduction': self.noise_reduction,
                 'adaptive_thresholding': self.adaptive_thresholding,
-                'histogram_equalization': self.histogram_equalization
+                'histogram_equalization': self.histogram_equalization,
+                'extraction_mode': self.extraction_mode
             }
 
             # Save parameters
@@ -120,7 +108,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
     @robust_method(max_retries=2, timeout_sec=30.0)
     def extract(self, image: ImageType, grid_points: GridPointsType) -> List[List[ImageType]]:
         """
-        Extract cell images from grid.
+        Extract cell images from grid with minimal processing.
 
         Args:
             image: Original image
@@ -128,9 +116,6 @@ class PerspectiveCellExtractor(CellExtractorBase):
 
         Returns:
             2D list of cell images (9x9 for standard Sudoku)
-
-        Raises:
-            CellExtractionError: If extraction fails
         """
         try:
             # Validate inputs
@@ -147,12 +132,10 @@ class PerspectiveCellExtractor(CellExtractorBase):
             else:
                 gray = image.copy()
 
-            # Apply global image enhancements
+            # Apply very minimal global preprocessing
             if self.noise_reduction:
-                gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
-            if self.histogram_equalization:
-                gray = cv2.equalizeHist(gray)
+                # Use smallest possible kernel for noise reduction
+                gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
             # Extract cells
             cell_images = []
@@ -167,7 +150,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         grid_points[i+1][j]     # Bottom-left
                     ]
 
-                    # Extract and process cell
+                    # Extract cell with minimal processing
                     try:
                         cell = self._extract_cell(gray, corners)
                         row_cells.append(cell)
@@ -188,14 +171,14 @@ class PerspectiveCellExtractor(CellExtractorBase):
 
     def _extract_cell(self, image: ImageType, corners: List[PointType]) -> ImageType:
         """
-        Extract a single cell using perspective transform.
+        Extract a single cell using perspective transform with minimal processing.
 
         Args:
             image: Grayscale image
             corners: Four corners of the cell [top-left, top-right, bottom-right, bottom-left]
 
         Returns:
-            Extracted and processed cell image
+            Extracted cell image with digit features preserved
         """
         # Check if all corners are valid
         invalid_corners = [p for p in corners if p[0] < 0 or p[1] < 0]
@@ -220,16 +203,8 @@ class PerspectiveCellExtractor(CellExtractorBase):
         if self.perspective_correction:
             transform_matrix = cv2.getPerspectiveTransform(corners_array, dst_corners)
 
-            # Apply perspective transformation with larger size
-            margin_factor = 1.04  # Extract slightly larger area (4% margin)
-            larger_size = int(output_size * margin_factor)
-            cell = cv2.warpPerspective(image, transform_matrix, (larger_size, larger_size))
-
-            # Crop to final size to eliminate potential border artifacts
-            margin_pixels = (larger_size - output_size) // 2
-            if margin_pixels > 0:
-                cell = cell[margin_pixels:margin_pixels+output_size,
-                        margin_pixels:margin_pixels+output_size]
+            # Apply perspective transformation
+            cell = cv2.warpPerspective(image, transform_matrix, (output_size, output_size))
         else:
             # Use simpler affine transform
             transform_matrix = cv2.getAffineTransform(
@@ -240,63 +215,82 @@ class PerspectiveCellExtractor(CellExtractorBase):
             # Apply affine transformation
             cell = cv2.warpAffine(image, transform_matrix, (output_size, output_size))
 
-        # Apply cell-specific enhancements
-        cell = self._enhance_cell(cell)
-
-        # Apply border removal
+        # Apply border removal (very minimal)
         if self.border_padding > 0:
             padding = int(output_size * self.border_padding)
             if padding > 0:
-                cell = cell[padding:-padding, padding:-padding]
-                cell = cv2.resize(cell, (output_size, output_size))
+                # Compute inner borders with minimal padding
+                start_idx = padding
+                end_idx = output_size - padding
+                # Extract the center portion
+                cell = cell[start_idx:end_idx, start_idx:end_idx]
+                # Resize back to output_size
+                cell = cv2.resize(cell, (output_size, output_size), interpolation=cv2.INTER_LINEAR)
 
-        return cell
+        # Apply optional enhancements based on extraction mode
+        if self.extraction_mode == "preserve":
+            # Return the cell with minimal processing
+            return cell
+        elif self.extraction_mode == "enhance":
+            # Apply gentle enhancements
+            return self._enhance_cell(cell)
+        elif self.extraction_mode == "threshold":
+            # Apply thresholding for binary output
+            return self._threshold_cell(cell)
+        else:
+            # Default to preserve mode
+            return cell
 
     def _enhance_cell(self, cell: ImageType) -> ImageType:
-        """
-        Enhance cell image for better digit recognition.
-
-        Args:
-            cell: Cell image
-
-        Returns:
-            Enhanced cell image
-        """
+        """Apply gentle enhancements to improve digit visibility."""
         # Make a copy to avoid modifying the original
         enhanced = cell.copy()
 
-        # Calculate cell statistics
-        cell_mean = np.mean(enhanced)
-        cell_std = np.std(enhanced)
+        # Calculate basic statistics
+        cell_min, cell_max = np.min(enhanced), np.max(enhanced)
+        cell_contrast = cell_max - cell_min
 
-        # Apply minimal Gaussian blur for noise reduction
-        if self.noise_reduction:
-            enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)  # Gentler blur
+        # Only apply enhancements if there's enough contrast
+        if cell_contrast > 20:
+            # Apply histogram normalization (stretches contrast, preserves details)
+            if self.histogram_equalization:
+                enhanced = cv2.normalize(enhanced, None, 0, 255, cv2.NORM_MINMAX)
 
-        # Apply adaptive thresholding with milder parameters
-        if self.adaptive_thresholding and cell_std > 15:  # Only if enough variance
-            enhanced = cv2.adaptiveThreshold(
-                enhanced, 255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY_INV,
-                19,  # Larger block size (was 11)
-                5    # Increased constant (was 2)
-            )
-        elif cell_std > 10:  # Fallback for low contrast but still has content
-            # Simple thresholding with normalized image
-            enhanced_norm = cv2.normalize(enhanced, None, 0, 255, cv2.NORM_MINMAX)
-            _, enhanced = cv2.threshold(enhanced_norm, 0, 255,
-                                       cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-        # Only apply contrast enhancement if enabled and needed
-        if self.contrast_enhancement and not self.adaptive_thresholding:
-            # Create milder lookup table
-            lut = np.zeros(256, dtype=np.uint8)
-            for i in range(256):
-                lut[i] = np.clip(int(i * 1.05 - 10), 0, 255)  # Much gentler adjustment
-            enhanced = cv2.LUT(enhanced, lut)
+            # Apply very gentle contrast enhancement
+            if self.contrast_enhancement:
+                alpha = 1.1  # Slight contrast increase
+                beta = -5    # Slight brightness decrease
+                enhanced = cv2.convertScaleAbs(enhanced, alpha=alpha, beta=beta)
 
         return enhanced
+
+    def _threshold_cell(self, cell: ImageType) -> ImageType:
+        """Apply thresholding for binary output (only when specifically requested)."""
+        # Make a copy to avoid modifying the original
+        binary = cell.copy()
+
+        # Calculate basic statistics
+        cell_min, cell_max = np.min(binary), np.max(binary)
+        cell_contrast = cell_max - cell_min
+
+        # Only apply thresholding if there's enough contrast
+        if cell_contrast > 20:
+            if self.adaptive_thresholding:
+                # Use larger block size and constant for gentler thresholding
+                binary = cv2.adaptiveThreshold(
+                    binary,
+                    255,
+                    cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY_INV,
+                    21,  # Large block size
+                    5    # Higher constant
+                )
+            else:
+                # Use Otsu's method for global thresholding
+                _, binary = cv2.threshold(binary, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        return binary
+
 
 class CannyEdgeCellExtractor(CellExtractorBase):
     """
