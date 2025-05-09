@@ -796,7 +796,7 @@ class RobustCellExtractor(CellExtractorBase):
 
     def _cell_quality(self, cell: ImageType) -> float:
         """
-        Calculate quality metric for a cell image.
+        Calculate quality metric for a cell image with preference for grayscale.
 
         Args:
             cell: Cell image
@@ -808,7 +808,13 @@ class RobustCellExtractor(CellExtractorBase):
         if cell is None or cell.size == 0:
             return 0.0
 
-        # Calculate various quality metrics
+        # Check if cell is binary (just black and white)
+        unique_values = len(np.unique(cell))
+        if unique_values <= 2:
+            # Penalize binary images to prefer grayscale
+            return 0.5
+
+        # Calculate various quality metrics for grayscale images
 
         # Contrast: difference between max and min values
         min_val, max_val = np.min(cell), np.max(cell)
@@ -831,7 +837,7 @@ class RobustCellExtractor(CellExtractorBase):
         else:
             noise = 0.5  # Default if no background found
 
-        # Balance of black vs. white pixels (for binary images)
+        # Balance of gray levels (for grayscale images)
         white_ratio = np.sum(cell > 127) / cell.size
         balance = 1.0 - abs(white_ratio - 0.2) / 0.2  # Optimal ~20% white
 
@@ -842,4 +848,5 @@ class RobustCellExtractor(CellExtractorBase):
                  noise * weights[2] +
                  balance * weights[3])
 
-        return score
+        # Boost grayscale score
+        return min(score * 1.5, 1.0)  # Ensure score is at most 1.0
