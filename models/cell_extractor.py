@@ -13,7 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 # --- MODULE VERSION PRINT STATEMENT ---
-print("--- Loading Custom version 2 Cell Extractor Module (Version: INTER_CUBIC Test on original structure) ---")
+print("--- Loading Custom version do power!! Cell Extractor Module (Version: INTER_CUBIC Test on original structure) ---")
 print(f"--- Timestamp: {__import__('datetime').datetime.now()} ---")
 
 
@@ -181,6 +181,9 @@ class PerspectiveCellExtractor(CellExtractorBase):
 
                 cell_images.append(row_cells)
 
+                print(f"DEBUG: PerspectiveCellExtractor.extract - Total rows in cell_images: {len(cell_images)}")
+                for idx, r_cells in enumerate(cell_images):
+                    print(f"DEBUG: PerspectiveCellExtractor.extract - Row {idx} has {len(r_cells)} cells.")
                 return cell_images
 
         except Exception as e:
