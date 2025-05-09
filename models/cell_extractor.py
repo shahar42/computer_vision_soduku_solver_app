@@ -50,6 +50,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
         self.noise_reduction = self.settings.get("noise_reduction", False)  # Disabled
         self.adaptive_thresholding = self.settings.get("adaptive_thresholding", False)  # Disabled
         self.histogram_equalization = self.settings.get("histogram_equalization", False)  # Disabled
+        
 
         # Extraction mode - 'preserve' keeps original grayscale values
         self.extraction_mode = self.settings.get("extraction_mode", "preserve")
@@ -560,7 +561,7 @@ class RobustCellExtractor(CellExtractorBase):
         self.edge_extractor = CannyEdgeCellExtractor()
 
         # Settings
-        self.use_multiple_extractors = self.settings.get("use_multiple_extractors", True)
+        self.use_multiple_extractors = self.settings.get("use_multiple_extractors", False)
         self.cell_size = self.settings.get("cell_size", 28)
 
     def load(self, model_path: str) -> bool:
