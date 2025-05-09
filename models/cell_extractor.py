@@ -13,7 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 # --- MODULE VERSION PRINT STATEMENT ---
-print("--- Loading Custom Cell Extractor Module (Version: INTER_CUBIC Test on original structure) ---")
+print("--- Loading Custom version 2 Cell Extractor Module (Version: INTER_CUBIC Test on original structure) ---")
 print(f"--- Timestamp: {__import__('datetime').datetime.now()} ---")
 
 
@@ -164,6 +164,11 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         grid_points[i+1][j]     # Bottom-left
                     ]
 
+                    # --- ADD THIS IF CONDITION ---
+                    if j == 4: # Check if it's the 5th column (0-indexed)
+                        print(f"DEBUG: Corners for cell ({i},{j}) in PerspectiveCellExtractor: {corners}")
+                    # --- END OF ADDITION ---
+
                     # Extract cell with minimal processing
                     try:
                         cell = self._extract_cell(gray, corners)
@@ -175,8 +180,6 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         row_cells.append(empty_cell)
 
                 cell_images.append(row_cells)
-
-            return cell_images
 
         except Exception as e:
             if isinstance(e, CellExtractionError):
