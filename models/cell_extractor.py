@@ -181,6 +181,8 @@ class PerspectiveCellExtractor(CellExtractorBase):
 
                 cell_images.append(row_cells)
 
+                return cell_images
+
         except Exception as e:
             if isinstance(e, CellExtractionError):
                 raise
