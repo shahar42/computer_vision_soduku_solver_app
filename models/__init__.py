@@ -1,15 +1,14 @@
+import logging
 """
 Sudoku Recognizer Core Models.
 
 This module provides abstract base classes for all system components.
 """
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
+
 import abc
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple, Union
-import loging
-
-from utils.error_handling import SudokuRecognizerError
 
 # Define common types
 ImageType = np.ndarray  # OpenCV image (numpy array)
