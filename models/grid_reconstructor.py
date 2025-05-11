@@ -161,7 +161,7 @@ class RansacGridReconstructor(GridReconstructorBase):
             logger.info(f"DEBUG_GRID: Found {len(vertical_lines_raw)} raw vertical lines.")
 
             # Verify we have enough lines
-            min_required_lines = self.num_grid_lines - 1 # Allow for missing a couple lines
+            min_required_lines = self.num_grid_lines - 2 # Allow for missing a couple lines
             if len(horizontal_lines_raw) < min_required_lines or len(vertical_lines_raw) < min_required_lines:
                 logger.warning(
                     f"DEBUG_GRID: Insufficient lines detected: {len(horizontal_lines_raw)} horizontal, "
@@ -174,7 +174,7 @@ class RansacGridReconstructor(GridReconstructorBase):
                 try:
                     logger.info("DEBUG_GRID: Relaxing RANSAC parameters to find more lines...")
                     # Reduce threshold and minimum points
-                    self.ransac_threshold *= 2
+                    self.ransac_threshold *= 1.6
                     self.min_line_points = max(3, self.min_line_points - 1) # Relax less aggressively
 
                     # Retry with relaxed parameters
