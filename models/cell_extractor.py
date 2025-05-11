@@ -141,7 +141,6 @@ class PerspectiveCellExtractor(CellExtractorBase):
         interpolation_method_name = "INTER_CUBIC"
 
         if self.perspective_correction:
-            print(f"PerspectiveCellExtractor._extract_cell: Applying cv2.warpPerspective with flags={interpolation_method_name}")
             transform_matrix = cv2.getPerspectiveTransform(corners_array, dst_corners)
             cell = cv2.warpPerspective(image, transform_matrix, (output_size, output_size), flags=interpolation_flag_to_use)
         else:
