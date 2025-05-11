@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1000,
-        "ransac_threshold": 4.0,
+        "ransac_threshold": 5.0,
         "min_line_points": 6,
         "grid_size": 9,
         "min_line_separation": 20,  # Minimum pixels between grid lines
