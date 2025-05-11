@@ -175,7 +175,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
             
         return []
 
-    @robust_method(max_retries=2, timeout_sec=10.0)
+    @robust_method(max_retries=2, timeout_sec=56.0)
     def detect(self, image: ImageType) -> List[PointType]:
         """
         Detect grid line intersections using computer vision techniques.
