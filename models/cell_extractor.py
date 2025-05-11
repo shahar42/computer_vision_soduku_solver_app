@@ -103,7 +103,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         grid_points[i+1][j]
                     ]
                     if j == 4:
-                       
+			print(f" ")
                     try:
                         cell = self._extract_cell(gray, corners)
                         row_cells.append(cell)
