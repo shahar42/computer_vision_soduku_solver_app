@@ -103,7 +103,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         grid_points[i+1][j]
                     ]
                     if j == 4:
-                        print(f"DEBUG: Corners for cell ({i},{j}) in PerspectiveCellExtractor: {corners}")
+                       
                     try:
                         cell = self._extract_cell(gray, corners)
                         row_cells.append(cell)
@@ -113,7 +113,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
                         row_cells.append(empty_cell)
                 cell_images.append(row_cells)
             
-            print(f"DEBUG: PerspectiveCellExtractor.extract - Total rows in cell_images: {len(cell_images)}")
+            
             for idx, r_cells in enumerate(cell_images):
                 print(f"DEBUG: PerspectiveCellExtractor.extract - Row {idx} has {len(r_cells)} cells.")
             return cell_images
