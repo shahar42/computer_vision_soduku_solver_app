@@ -147,7 +147,7 @@ class RansacGridReconstructor(GridReconstructorBase):
             # *** FIX: Removed image_shape from validate_points call ***
             validate_points(points)
 
-            if len(points) < 20: # Minimum number of points for reliable grid reconstruction
+            if len(points) < 53: # Minimum number of points for reliable grid reconstruction
                 logger.error(f"DEBUG_GRID: Insufficient points: {len(points)}")
                 raise GridReconstructionError(f"Insufficient points for grid reconstruction: {len(points)}")
 
@@ -161,7 +161,7 @@ class RansacGridReconstructor(GridReconstructorBase):
             logger.info(f"DEBUG_GRID: Found {len(vertical_lines_raw)} raw vertical lines.")
 
             # Verify we have enough lines
-            min_required_lines = self.num_grid_lines - 2 # Allow for missing a couple lines
+            min_required_lines = self.num_grid_lines - 1 # Allow for missing a couple lines
             if len(horizontal_lines_raw) < min_required_lines or len(vertical_lines_raw) < min_required_lines:
                 logger.warning(
                     f"DEBUG_GRID: Insufficient lines detected: {len(horizontal_lines_raw)} horizontal, "
@@ -174,7 +174,7 @@ class RansacGridReconstructor(GridReconstructorBase):
                 try:
                     logger.info("DEBUG_GRID: Relaxing RANSAC parameters to find more lines...")
                     # Reduce threshold and minimum points
-                    self.ransac_threshold *= 1.5
+                    self.ransac_threshold *= 2
                     self.min_line_points = max(3, self.min_line_points - 1) # Relax less aggressively
 
                     # Retry with relaxed parameters
@@ -186,7 +186,7 @@ class RansacGridReconstructor(GridReconstructorBase):
                     # Restore original parameters
                     self.ransac_threshold = original_threshold
                     self.min_line_points = original_min_points
-            
+
             # If still insufficient lines, raise error (fallback handled by RobustReconstructor)
             if len(horizontal_lines_raw) < min_required_lines or len(vertical_lines_raw) < min_required_lines:
                     logger.error(f"DEBUG_GRID: Still insufficient lines after relaxing parameters.")
@@ -200,7 +200,7 @@ class RansacGridReconstructor(GridReconstructorBase):
             horizontal_lines = self._select_grid_lines(horizontal_lines_raw, self.num_grid_lines, 'horizontal', image_shape)
             logger.info("DEBUG_GRID: Selecting vertical grid lines...")
             vertical_lines = self._select_grid_lines(vertical_lines_raw, self.num_grid_lines, 'vertical', image_shape)
-            
+
             img_height, img_width = image_shape[:2]
             logger.info("DEBUG_GRID: ===== Final Selected Horizontal Lines (should be sorted top-to-bottom) =====")
             for i, line_params in enumerate(horizontal_lines):
@@ -331,7 +331,7 @@ class RansacGridReconstructor(GridReconstructorBase):
                     # Get indices relative to the *original* remaining_points list
                     best_inliers_indices = np.where(inlier_mask)[0].tolist()
                     best_inlier_count = current_inlier_count
-            
+
             # If no good line found in iterations, break outer loop
             if best_line is None:
                 logger.info(f"DEBUG_GRID: Ransac._find_lines: No best_line found in RANSAC iteration {line_idx_find}, breaking outer loop.")
@@ -376,14 +376,14 @@ class RansacGridReconstructor(GridReconstructorBase):
             return []
 
         # Calculate line positions and store with original line
-        line_props = [] 
+        line_props = []
         for idx, line_params in enumerate(lines):
             a, b, c_val = line_params # Renamed c to c_val
             position = 0.0
             if orientation == 'horizontal':
                 # For a horizontal line ax + by + c = 0, if b!=0, y = (-a/b)x - c/b.
                 # We want to sort by Y. Calculate y at image center X for robustness.
-                if abs(b) > 1e-5: 
+                if abs(b) > 1e-5:
                     position = (-c_val - a * (img_width / 2)) / b
                 else: # Line is nearly vertical (should not happen if _find_lines is correct for H lines)
                     position = -c_val / a if abs(a) > 1e-5 else -c_val # Fallback, less reliable
@@ -401,7 +401,7 @@ class RansacGridReconstructor(GridReconstructorBase):
 
         # Sort lines by the calculated position
         line_props.sort(key=lambda x: x['pos'])
-        
+
         logger.info(f"DEBUG_GRID: Ransac._select_grid_lines: Sorted {orientation} lines by calculated position:")
         for lp in line_props:
             logger.info(f"DEBUG_GRID:     ID {lp['id']}, Pos: {lp['pos']:.2f}, Line: (a={lp['line'][0]:.2f}, b={lp['line'][1]:.2f}, c={lp['line'][2]:.2f})")
@@ -421,7 +421,7 @@ class RansacGridReconstructor(GridReconstructorBase):
         # Using the 'line_props' which are sorted by 'pos'
         sorted_lines_by_pos = [lp['line'] for lp in line_props]
         sorted_positions_by_pos = [lp['pos'] for lp in line_props]
-        
+
         selected_lines_after_sep = []
         if len(sorted_lines_by_pos) > 0:
             selected_lines_after_sep.append(sorted_lines_by_pos[0])
@@ -431,7 +431,7 @@ class RansacGridReconstructor(GridReconstructorBase):
                 if current_pos - last_added_pos >= self.min_line_separation * 0.8: # Allow slightly less
                     selected_lines_after_sep.append(sorted_lines_by_pos[i])
                     last_added_pos = current_pos
-        
+
         count = len(selected_lines_after_sep)
         logger.info(f"DEBUG_GRID: Ransac._select_grid_lines: After separation filter, selected {count} {orientation} lines.")
 
@@ -514,31 +514,11 @@ class RansacGridReconstructor(GridReconstructorBase):
                     y_clamped = max(0, min(int(round(y)), height - 1))
                     point = (x_clamped, y_clamped)
                     # *** End Clamping Fix ***
-                
+
                 row_points.append(point)
             grid_points.append(row_points)
         logger.info(f"DEBUG_GRID: Ransac._calculate_grid_intersections completed. Grid dimensions: {len(grid_points)}x{len(grid_points[0]) if grid_points else 0}")
         return grid_points
-
-    # This method seems redundant if homography is handled separately or not used
-    # def _apply_homography_correction(self, grid_points: GridPointsType, image_shape: Tuple[int, int]) -> GridPointsType:
-    #     # ... (Implementation as before, but might be better placed in HomographyReconstructor) ...
-    #     pass
-
-    # This method was specific to the RANSAC class but seems more like a fallback strategy
-    # def _reconstruct_with_clustering(self, points: List[PointType], image_shape: Tuple[int, int]) -> GridPointsType:
-    #     # ... (Implementation as before, maybe move to RobustReconstructor or utils) ...
-    #     pass
-
-    # This method was specific to the RANSAC class but seems more like a fallback strategy
-    # def _refine_grid(
-    #     self,
-    #     grid_points: GridPointsType,
-    #     detected_points: List[PointType],
-    #     image_shape: Tuple[int, int]
-    # ) -> GridPointsType:
-    #     # ... (Implementation as before, maybe move to RobustReconstructor or utils) ...
-    #     pass
 
 
 class HomographyGridReconstructor(GridReconstructorBase):
@@ -771,7 +751,7 @@ class HomographyGridReconstructor(GridReconstructorBase):
         diff_coords = corners[:, 1] - corners[:, 0] # y - x
         ordered[1] = corners[np.argmin(diff_coords)] # Top-right (smallest y-x implies larger x or smaller y)
         ordered[3] = corners[np.argmax(diff_coords)] # Bottom-left (largest y-x implies smaller x or larger y)
-        
+
         # Small correction for known issue with argmin/argmax for diff_coords if points are collinear or form odd shapes
         # If ordered[1] (TR) is to the left of ordered[0] (TL), swap TR and BL if BL is TR-like
         if ordered[1][0] < ordered[0][0]: # TR.x < TL.x
@@ -872,7 +852,7 @@ class HomographyGridReconstructor(GridReconstructorBase):
                         src_x = max(0, min(int(round(src_x_interp)), width - 1))
                         src_y = max(0, min(int(round(src_y_interp)), height - 1))
                         point = (src_x, src_y)
-                    
+
                     row_points.append(point)
                 grid_points.append(row_points)
 
@@ -1034,7 +1014,7 @@ class RobustGridReconstructor(GridReconstructorBase):
                     else:
                         logger.warning("DEBUG_GRID: RobustGridReconstructor - Homography result has incorrect dimensions.")
                         raise GridReconstructionError("Homography result has incorrect dimensions.")
-                
+
                 # Add other methods like 'contour' if implemented
                 # elif method == "contour":
                 #     logger.info("Trying contour-based grid reconstruction")
