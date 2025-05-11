@@ -22,8 +22,8 @@ DEFAULT_CONFIG = {
     "intersection_detector": {
         "model_path": "data/models/intersection_detector.h5",
         "confidence_threshold": 0.7,
-        "nms_threshold": 0.3,
-        "min_intersections": 60,  # Minimum number of intersections to proceed
+        "nms_threshold": 3,
+        "min_intersections": 68,  # Minimum number of intersections to proceed
         "detection_methods": ["cnn", "hough", "adaptive_threshold"],
         "patch_size": 15,  # Size of intersection patch in pixels
         "fallback_to_cv": True,  # Fallback to OpenCV methods if CNN fails
@@ -33,8 +33,8 @@ DEFAULT_CONFIG = {
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1000,
-        "ransac_threshold": 5.0,
-        "min_line_points": 5,
+        "ransac_threshold": 4.0,
+        "min_line_points": 6,
         "grid_size": 9,
         "min_line_separation": 20,  # Minimum pixels between grid lines
         "max_angle_deviation": 15,  # Maximum angle deviation in degrees
@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
     # Cell extractor settings
     "cell_extractor": {
         "cell_size": 28,  # Output cell size in pixels
-        "border_padding": 0.15,  # Percentage of cell size to remove as border
+        "border_padding": 0.1,  # Percentage of cell size to remove as border
         "perspective_correction": True,
         "contrast_enhancement": True,
         "noise_reduction": True,
@@ -59,10 +59,10 @@ DEFAULT_CONFIG = {
     # Digit recognizer settings
     "digit_recognizer": {
         "model_path": "data/models/digit_recognizer.h5",
-        "confidence_threshold": 0.8,
+        "confidence_threshold": 0.85,
         "use_multiple_models": True,
         "use_ensemble": True,
-        "empty_cell_threshold": 0.95,  # Threshold to consider a cell empty
+        "empty_cell_threshold": 0.93,  # Threshold to consider a cell empty
         "augment_at_runtime": True,  # Apply augmentation during recognition
         "fallback_models": ["tflite", "svm", "template_matching"],
         "digit_height_min_ratio": 0.3,  # Minimum height ratio relative to cell
@@ -73,7 +73,7 @@ DEFAULT_CONFIG = {
     "solver": {
         "use_constraint_propagation": True,
         "use_backtracking": True,
-        "max_solving_time": 5,  # Max time in seconds
+        "max_solving_time": 15,  # Max time in seconds
         "use_multiple_solvers": True,
         "validate_solution": True,
         "fallback_to_simpler_solver": True,
@@ -109,7 +109,7 @@ DEFAULT_CONFIG = {
     
     # Evaluation settings
     "evaluation": {
-        "test_split": 0.2,
+        "test_split": 0.18,
         "metrics": ["accuracy", "precision", "recall", "f1"],
         "confusion_matrix": True,
         "save_error_examples": True,
@@ -142,7 +142,7 @@ DEFAULT_ERROR_MESSAGES = {
     "insufficient_intersections": "Not enough grid intersections detected. Try improving lighting or image quality.",
     "cell_extraction_failed": "Failed to extract Sudoku cells. Please ensure the grid is not distorted.",
     "digit_recognition_failed": "Failed to recognize digits. Please ensure digits are clearly written.",
-    "solving_failed": "Could not solve the Sudoku puzzle. Please check that the recognized digits are correct.",
+    "solving_failed": "Sorry :( Could not solve the Sudoku puzzle. Please check that the recognized digits are correct.",
     "invalid_puzzle": "The recognized puzzle is invalid. Please check that the image contains a valid Sudoku puzzle.",
     "system_error": "An unexpected error occurred. Please try again with a different image.",
 }
