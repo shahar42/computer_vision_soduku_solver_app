@@ -21,9 +21,9 @@ DEFAULT_CONFIG = {
     # Intersection detector settings
     "intersection_detector": {
         "model_path": "data/models/intersection_detector.h5",
-        "confidence_threshold": 0.7,
+        "confidence_threshold": 0.6,
         "nms_threshold": 3,
-        "min_intersections": 650,  # Minimum number of intersections to proceed
+        "min_intersections": 65,  # Minimum number of intersections to proceed
         "detection_methods": ["cnn", "hough", "adaptive_threshold"],
         "patch_size": 15,  # Size of intersection patch in pixels
         "fallback_to_cv": True,  # Fallback to OpenCV methods if CNN fails
@@ -33,7 +33,7 @@ DEFAULT_CONFIG = {
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1000,
-        "ransac_threshold": 4.0,
+        "ransac_threshold": 5,
         "min_line_points": 4,
         "grid_size": 9,
         "min_line_separation": 20,  # Minimum pixels between grid lines
@@ -47,13 +47,13 @@ DEFAULT_CONFIG = {
     # Cell extractor settings
     "cell_extractor": {
         "cell_size": 28,  # Output cell size in pixels
-        "border_padding": 0.1,  # Percentage of cell size to remove as border
+        "border_padding": 0.05,  # Percentage of cell size to remove as border
         "perspective_correction": True,
-        "contrast_enhancement": True,
-        "noise_reduction": True,
-        "adaptive_thresholding": True,
-        "histogram_equalization": True,
-        "use_multiple_extractors": True,  # Try different extraction methods
+        "contrast_enhancement": False,
+        "noise_reduction": False,
+        "adaptive_thresholding": False,
+        "histogram_equalization": False,
+        "use_multiple_extractors": False,  # Try different extraction methods
     },
     
     # Digit recognizer settings
