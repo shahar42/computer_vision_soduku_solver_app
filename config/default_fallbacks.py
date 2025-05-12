@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     # Intersection detector settings
     "intersection_detector": {
         "model_path": "data/models/intersection_detector.h5",
-        "confidence_threshold": 0.6,
+        "confidence_threshold": 0.77,
         "nms_threshold": 3,
         "min_intersections": 65,  # Minimum number of intersections to proceed
         "detection_methods": ["cnn", "hough", "adaptive_threshold"],
@@ -59,10 +59,10 @@ DEFAULT_CONFIG = {
     # Digit recognizer settings
     "digit_recognizer": {
         "model_path": "data/models/digit_recognizer.h5",
-        "confidence_threshold": 0.85,
+        "confidence_threshold": 0.82,
         "use_multiple_models": True,
         "use_ensemble": True,
-        "empty_cell_threshold": 0.93,  # Threshold to consider a cell empty
+        "empty_cell_threshold": 0.90,  # Threshold to consider a cell empty
         "augment_at_runtime": True,  # Apply augmentation during recognition
         "fallback_models": ["tflite", "svm", "template_matching"],
         "digit_height_min_ratio": 0.3,  # Minimum height ratio relative to cell
