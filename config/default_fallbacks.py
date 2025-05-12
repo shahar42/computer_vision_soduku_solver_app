@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
         "model_path": "data/models/intersection_detector.h5",
         "confidence_threshold": 0.7,
         "nms_threshold": 3,
-        "min_intersections": 68,  # Minimum number of intersections to proceed
+        "min_intersections": 650,  # Minimum number of intersections to proceed
         "detection_methods": ["cnn", "hough", "adaptive_threshold"],
         "patch_size": 15,  # Size of intersection patch in pixels
         "fallback_to_cv": True,  # Fallback to OpenCV methods if CNN fails
@@ -33,8 +33,8 @@ DEFAULT_CONFIG = {
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1000,
-        "ransac_threshold": 5.0,
-        "min_line_points": 5,
+        "ransac_threshold": 4.0,
+        "min_line_points": 4,
         "grid_size": 9,
         "min_line_separation": 20,  # Minimum pixels between grid lines
         "max_angle_deviation": 15,  # Maximum angle deviation in degrees
