@@ -28,7 +28,7 @@ class PerspectiveCellExtractor(CellExtractorBase):
         print("PerspectiveCellExtractor: Initializing... (INTER_CUBIC Test Version - from original structure)")
         self.settings = get_settings().get_nested("cell_extractor")
         self.cell_size = self.settings.get("cell_size", 28)
-        self.border_padding = self.settings.get("border_padding", 0.05)
+        self.border_padding = self.settings.get("border_padding", 0.07)
         self.perspective_correction = self.settings.get("perspective_correction", True)
         self.contrast_enhancement = self.settings.get("contrast_enhancement", False)
         self.noise_reduction = self.settings.get("noise_reduction", False)
@@ -76,30 +76,46 @@ class PerspectiveCellExtractor(CellExtractorBase):
             return False
 
     @robust_method(max_retries=2, timeout_sec=30.0)
-    @robust_method(max_retries=3, timeout_sec=60.0)
     def extract(self, image: ImageType, grid_points: GridPointsType) -> List[List[ImageType]]:
-        """
-        Extract cells using forced perspective extractor settings.
-        """
         try:
             validate_image(image)
             if len(grid_points) != 10 or any(len(row) != 10 for row in grid_points):
-                raise CellExtractionError(f"Invalid grid points: {len(grid_points)} rows, expected 10")
+                raise CellExtractionError(
+                    f"Invalid grid points: {len(grid_points)} rows, expected 10"
+                )
 
-            # Force settings to match notebook
-            self.perspective_extractor.extraction_mode = "preserve"
-            self.perspective_extractor.adaptive_thresholding = False
-            self.perspective_extractor.contrast_enhancement = False
-            self.perspective_extractor.noise_reduction = False
-            self.perspective_extractor.border_padding = 0.05
-            self.use_multiple_extractors = False
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image.copy()
+
+            if self.noise_reduction:
+                gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+            cell_images = []
+            for i in range(9):
+                row_cells = []
+                for j in range(9):
+                    corners = [
+                        grid_points[i][j],
+                        grid_points[i][j+1],
+                        grid_points[i+1][j+1],
+                        grid_points[i+1][j]
+                    ]
+                    if j == 4:
+                        print(f" ")
+                    try:
+                        cell = self._extract_cell(gray, corners)
+                        row_cells.append(cell)
+                    except Exception as e:
+                        logger.warning(f"Error extracting cell ({i},{j}): {str(e)}")
+                        empty_cell = np.zeros((self.cell_size, self.cell_size), dtype=np.uint8)
+                        row_cells.append(empty_cell)
+                cell_images.append(row_cells)
             
-            # Use only perspective extractor
-            return self.perspective_extractor.extract(image, grid_points)
             
-        except Exception as e:
-            if isinstance(e, CellExtractionError): raise
-            raise CellExtractionError(f"Error in robust cell extraction: {str(e)}")
+            for idx, r_cells in enumerate(cell_images):
+                print(f"DEBUG: PerspectiveCellExtractor.extract - Row {idx} has {len(r_cells)} cells.")
             return cell_images
 
         except Exception as e:
@@ -189,7 +205,7 @@ class CannyEdgeCellExtractor(CellExtractorBase):
     def __init__(self):
         self.settings = get_settings().get_nested("cell_extractor")
         self.cell_size = self.settings.get("cell_size", 28)
-        self.border_padding = self.settings.get("border_padding", 0.05)
+        self.border_padding = self.settings.get("border_padding", 0.07)
         self.canny_low = self.settings.get("canny_low", 50)
         self.canny_high = self.settings.get("canny_high", 150)
 
@@ -228,30 +244,36 @@ class CannyEdgeCellExtractor(CellExtractorBase):
             return False
 
     @robust_method(max_retries=2, timeout_sec=30.0)
-    @robust_method(max_retries=3, timeout_sec=60.0)
     def extract(self, image: ImageType, grid_points: GridPointsType) -> List[List[ImageType]]:
-        """
-        Extract cells using forced perspective extractor settings.
-        """
         try:
             validate_image(image)
             if len(grid_points) != 10 or any(len(row) != 10 for row in grid_points):
                 raise CellExtractionError(f"Invalid grid points: {len(grid_points)} rows, expected 10")
 
-            # Force settings to match notebook
-            self.perspective_extractor.extraction_mode = "preserve"
-            self.perspective_extractor.adaptive_thresholding = False
-            self.perspective_extractor.contrast_enhancement = False
-            self.perspective_extractor.noise_reduction = False
-            self.perspective_extractor.border_padding = 0.05
-            self.use_multiple_extractors = False
-            
-            # Use only perspective extractor
-            return self.perspective_extractor.extract(image, grid_points)
-            
-        except Exception as e:
-            if isinstance(e, CellExtractionError): raise
-            raise CellExtractionError(f"Error in robust cell extraction: {str(e)}")
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            edges = cv2.Canny(blurred, self.canny_low, self.canny_high)
+            kernel = np.ones((3, 3), np.uint8)
+            dilated_edges = cv2.dilate(edges, kernel, iterations=1)
+
+            cell_images = []
+            for i in range(9):
+                row_cells = []
+                for j in range(9):
+                    corners = [
+                        grid_points[i][j], grid_points[i][j+1],
+                        grid_points[i+1][j+1], grid_points[i+1][j]
+                    ]
+                    try:
+                        cell_gray = self._extract_cell_patch(gray, corners)
+                        cell_edges = self._extract_cell_patch(dilated_edges, corners)
+                        cell = self._process_cell(cell_gray, cell_edges)
+                        row_cells.append(cell)
+                    except Exception as e:
+                        logger.warning(f"Error extracting cell ({i},{j}) in Canny: {str(e)}")
+                        empty_cell = np.zeros((self.cell_size, self.cell_size), dtype=np.uint8)
+                        row_cells.append(empty_cell)
+                cell_images.append(row_cells)
             return cell_images
         except Exception as e:
             if isinstance(e, CellExtractionError): raise
@@ -333,30 +355,59 @@ class RobustCellExtractor(CellExtractorBase):
         return perspective_saved and edge_saved
 
     @robust_method(max_retries=3, timeout_sec=60.0)
-    @robust_method(max_retries=3, timeout_sec=60.0)
     def extract(self, image: ImageType, grid_points: GridPointsType) -> List[List[ImageType]]:
-        """
-        Extract cells using forced perspective extractor settings.
-        """
         try:
             validate_image(image)
             if len(grid_points) != 10 or any(len(row) != 10 for row in grid_points):
                 raise CellExtractionError(f"Invalid grid points: {len(grid_points)} rows, expected 10")
 
-            # Force settings to match notebook
-            self.perspective_extractor.extraction_mode = "preserve"
-            self.perspective_extractor.adaptive_thresholding = False
-            self.perspective_extractor.contrast_enhancement = False
-            self.perspective_extractor.noise_reduction = False
-            self.perspective_extractor.border_padding = 0.05
-            self.use_multiple_extractors = False
-            
-            # Use only perspective extractor
-            return self.perspective_extractor.extract(image, grid_points)
-            
+            if not self.use_multiple_extractors:
+                return self.perspective_extractor.extract(image, grid_points)
+
+            perspective_cells, edge_cells = None, None
+            try:
+                perspective_cells = self.perspective_extractor.extract(image, grid_points)
+            except Exception as e: logger.warning(f"Perspective extraction failed: {str(e)}")
+            try:
+                edge_cells = self.edge_extractor.extract(image, grid_points)
+            except Exception as e: logger.warning(f"Edge extraction failed: {str(e)}")
+
+            if perspective_cells is None and edge_cells is None:
+                logger.warning("Both extraction methods failed, using fallback")
+                return self._extract_fallback(image, grid_points)
+            if perspective_cells is None: return cast(List[List[ImageType]], edge_cells)
+            if edge_cells is None: return cast(List[List[ImageType]], perspective_cells)
+
+            return self._combine_extraction_results(perspective_cells, edge_cells)
         except Exception as e:
             if isinstance(e, CellExtractionError): raise
             raise CellExtractionError(f"Error in robust cell extraction: {str(e)}")
+
+    def _extract_fallback(self, image: ImageType, grid_points: GridPointsType) -> List[List[ImageType]]:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
+        cell_images = []
+        for i in range(9):
+            row_cells = []
+            for j in range(9):
+                try:
+                    corners = [
+                        grid_points[i][j], grid_points[i][j+1],
+                        grid_points[i+1][j+1], grid_points[i+1][j]
+                    ]
+                    corners_array = np.array(corners, dtype=np.float32)
+                    dst_corners = np.array([
+                        [0,0], [self.cell_size-1,0],
+                        [self.cell_size-1,self.cell_size-1], [0,self.cell_size-1]
+                    ], dtype=np.float32)
+                    transform_matrix = cv2.getPerspectiveTransform(corners_array, dst_corners)
+                    cell = cv2.warpPerspective(gray, transform_matrix, (self.cell_size, self.cell_size))
+                    _, cell = cv2.threshold(cell, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    row_cells.append(cell)
+                except Exception as e:
+                    logger.warning(f"Fallback extraction failed for cell ({i},{j}): {str(e)}")
+                    empty_cell = np.zeros((self.cell_size, self.cell_size), dtype=np.uint8)
+                    row_cells.append(empty_cell)
+            cell_images.append(row_cells)
         return cell_images
 
     def _combine_extraction_results(
