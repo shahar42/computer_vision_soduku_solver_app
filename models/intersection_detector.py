@@ -1,9 +1,9 @@
 """
-Intersection Detector Module.
+ Intersection Detector Module.
 
-This module implements intersection detection using both CNN and traditional
-computer vision approaches with robust error handling and fallback mechanisms.
-"""
+ This module implements intersection detection using both CNN and traditional
+ computer vision approaches with robust error handling and fallback mechanisms.
+ """
 
 import os
 import numpy as np
@@ -147,32 +147,32 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         """
         # Convert to grayscale if needed
         gray_image_hough = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
-        
+
         # Call the private method
         points_hough, conf_hough = self._detect_with_canny_edges(gray_image_hough)
-        
+
         if points_hough and len(points_hough) >= 20:
             # Process points similar to detect method
             image_normalized, scale = normalize_image_size(image, min_size=300, max_size=1600)
-            
+
             # Cluster points
             clustered_points = self._cluster_intersections(points_hough, [conf_hough] * len(points_hough))
-            
+
             # Rescale if needed
             if scale != 1.0:
                 clustered_points = [(int(x / scale), int(y / scale)) for x, y in clustered_points]
-                
+
             # Filter points
             filtered_points = [
                 (x, y) for x, y in clustered_points
                 if is_valid_intersection_point((x, y), image.shape)
             ]
-            
+
             # Add the standard offset
             filtered_points = [(x + 7, y + 10) for x, y in filtered_points]
-            
+
             return filtered_points
-            
+
         return []
 
     @robust_method(max_retries=2, timeout_sec=56.0)
@@ -849,6 +849,16 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
             logger.error(f"Error saving CNN intersection detector: {str(e)}")
             return False
 
+    # Moved _preprocess_image method here
+    def _preprocess_image(self, image: ImageType) -> ImageType:
+        """
+        Preprocess image for intersection detection.
+        Modified to match notebook approach.
+        """
+        # SIMPLIFIED to match notebook
+        normalized = image.astype(np.float32) / 255.0
+        return normalized
+
     @robust_method(max_retries=2, timeout_sec=30.0)
     def detect(self, image: ImageType) -> List[PointType]:
         """
@@ -881,18 +891,61 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 gray = image.copy()
 
             # FIX 2: Use the same preprocessing method as in training
-    def _preprocess_image(self, image: ImageType) -> ImageType:
-        """
-        Preprocess image for intersection detection.
-        Modified to match notebook approach.
-        """
-        # SIMPLIFIED to match notebook
-        normalized = image.astype(np.float32) / 255.0
-        return normalized
+            # Preprocess the grayscale image
+            gray_preprocessed = self._preprocess_image(gray)
+
+            # Detect intersections using sliding window
+            points, confidences = self._detect_intersections_sliding_window(gray_preprocessed) # Use preprocessed image
+
+            # If no points detected, raise error
+            if not points:
+                raise IntersectionDetectionError("CNN detection failed to find any points")
+
+            # Cluster similar intersection points
+            clustered_points = self._cluster_points(points, confidences)
+
+            # Rescale points if image was resized
+            if scale != 1.0:
+                clustered_points = [(int(x / scale), int(y / scale)) for x, y in clustered_points]
+
+            # Filter points based on image boundaries
+            original_shape = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR).shape if len(image.shape) == 2 else image.shape
+            filtered_points = [
+                (x, y) for x, y in clustered_points
+                if is_valid_intersection_point((x, y), original_shape)
+            ]
+
+            # Verify we have enough points
+            min_intersections = self.settings.get("min_intersections", 60)
+            if len(filtered_points) < min_intersections:
+                 logger.warning(
+                     f"Insufficient CNN intersections detected: {len(filtered_points)} < {min_intersections}"
+                 )
+                 # Use clustered points if filtering removed too many
+                 filtered_points = clustered_points
+
+            # Final check
+            if len(filtered_points) < 20: # Absolute minimum
+                raise IntersectionDetectionError(
+                    f"Too few CNN intersections detected after clustering: {len(filtered_points)}"
+                )
+
+            logger.info(f"CNN detected {len(filtered_points)} intersections")
+
+            # Add the same (+7, +10) offset as in CVIntersectionDetector for consistency
+            filtered_points = [(x + 7, y + 10) for x, y in filtered_points]
+
+            return filtered_points
+
+        except Exception as e:
+            if isinstance(e, IntersectionDetectionError):
+                raise
+            raise IntersectionDetectionError(f"Error in CNN intersection detection: {str(e)}")
+
 
     def _detect_intersections_sliding_window(
         self,
-        image: ImageType
+        image: ImageType # Expects preprocessed image
     ) -> Tuple[List[PointType], List[float]]:
         """
         Detect intersections using sliding window.
@@ -910,32 +963,35 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         confidence_scores = []
 
         # Pad image to handle border regions
+        # Use the preprocessed image which is already float and normalized
         padded = np.pad(
             image,
             ((half_patch, half_patch), (half_patch, half_patch)),
-            mode='constant'
+            mode='constant', constant_values=0 # Pad with 0 for normalized image
         )
 
         # Slide window over image
         for y in range(0, height, self.stride):
             for x in range(0, width, self.stride):
-                # Extract patch
-                patch = padded[y:y+2*half_patch, x:x+2*half_patch]
+                # Extract patch (coordinates are relative to the original image,
+                # but indexing is done on the padded image)
+                patch = padded[y:y+self.patch_size, x:x+self.patch_size]
 
-                # Skip if patch is too small
-                if patch.shape[0] < 2*half_patch or patch.shape[1] < 2*half_patch:
+                # Skip if patch is not the correct size (e.g., at edges if padding wasn't enough)
+                if patch.shape[0] != self.patch_size or patch.shape[1] != self.patch_size:
                     continue
 
                 # Resize patch to model input size
                 resized_patch = cv2.resize(patch, (self.input_shape[1], self.input_shape[0]))
 
-                # Prepare input for model
+                # Prepare input for model (add batch and channel dimensions)
                 input_data = resized_patch.reshape(1, *self.input_shape)
 
                 # Predict
                 confidence = self.model.predict(input_data, verbose=0)[0][0]
 
                 # Add point if confidence is above threshold
+                # The center of the patch corresponds to (x + half_patch, y + half_patch) in original image coordinates
                 if confidence >= self.confidence_threshold:
                     intersection_points.append((x + half_patch, y + half_patch))
                     confidence_scores.append(float(confidence))
@@ -962,43 +1018,62 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         # Sort by confidence (descending)
         points_with_conf.sort(key=lambda x: x[1], reverse=True)
 
-        # Cluster points
-        clusters = []
-        cluster_distance = self.patch_size
+        # Cluster points using DBSCAN for potentially better results
+        # eps: The maximum distance between two samples for one to be considered as in the neighborhood of the other.
+        # min_samples: The number of samples in a neighborhood for a point to be considered as a core point.
+        clustering = DBSCAN(eps=self.patch_size, min_samples=1).fit([p[0] for p in points_with_conf])
+        labels = clustering.labels_
 
-        for point, conf in points_with_conf:
-            x, y = point
-
-            # Check if point is close to any existing cluster
-            found_cluster = False
-            for i, cluster in enumerate(clusters):
-                cluster_point, _ = cluster[0]  # Use first point as representative
-                cluster_x, cluster_y = cluster_point
-
-                # Calculate distance
-                distance = np.sqrt((x - cluster_x) ** 2 + (y - cluster_y) ** 2)
-
-                if distance < cluster_distance:
-                    # Add point to existing cluster
-                    cluster.append((point, conf))
-                    found_cluster = True
-                    break
-
-            if not found_cluster:
-                # Create new cluster
-                clusters.append([(point, conf)])
-
-        # Calculate average point for each cluster
+        num_clusters = len(set(labels)) - (1 if -1 in labels else 0) # -1 is noise in DBSCAN
         clustered_points = []
-        for cluster in clusters:
-            # Calculate weighted average based on confidence
-            total_weight = sum(conf for _, conf in cluster)
-            weighted_x = sum(x * conf for (x, y), conf in cluster) / total_weight
-            weighted_y = sum(y * conf for (x, y), conf in cluster) / total_weight
 
-            clustered_points.append((int(round(weighted_x)), int(round(weighted_y))))
+        for cluster_id in range(num_clusters):
+            cluster_members = [points_with_conf[i] for i, label in enumerate(labels) if label == cluster_id]
+
+            if not cluster_members:
+                continue
+
+            # Calculate weighted average based on confidence
+            total_weight = sum(conf for _, conf in cluster_members)
+            if total_weight == 0: # Avoid division by zero if confidences are somehow zero
+                 avg_x = sum(x for (x, y), conf in cluster_members) / len(cluster_members)
+                 avg_y = sum(y for (x, y), conf in cluster_members) / len(cluster_members)
+            else:
+                weighted_x = sum(x * conf for (x, y), conf in cluster_members) / total_weight
+                weighted_y = sum(y * conf for (x, y), conf in cluster_members) / total_weight
+                avg_x, avg_y = weighted_x, weighted_y
+
+            clustered_points.append((int(round(avg_x)), int(round(avg_y))))
+
+
+        # # Original clustering logic (kept for reference)
+        # clusters = []
+        # cluster_distance = self.patch_size
+
+        # for point, conf in points_with_conf:
+        #     x, y = point
+        #     found_cluster = False
+        #     for i, cluster in enumerate(clusters):
+        #         cluster_point, _ = cluster[0] # Use first point as representative (could use centroid)
+        #         cluster_x, cluster_y = cluster_point
+        #         distance = np.sqrt((x - cluster_x)**2 + (y - cluster_y)**2)
+        #         if distance < cluster_distance:
+        #             cluster.append((point, conf))
+        #             found_cluster = True
+        #             break
+        #     if not found_cluster:
+        #         clusters.append([(point, conf)])
+
+        # clustered_points = []
+        # for cluster in clusters:
+        #     total_weight = sum(conf for _, conf in cluster)
+        #     if total_weight == 0: continue # Avoid division by zero
+        #     weighted_x = sum(x * conf for (x, y), conf in cluster) / total_weight
+        #     weighted_y = sum(y * conf for (x, y), conf in cluster) / total_weight
+        #     clustered_points.append((int(round(weighted_x)), int(round(weighted_y))))
 
         return clustered_points
+
 
     def train(self, images: List[ImageType], annotations: List[List[PointType]]) -> None:
         """
@@ -1021,6 +1096,11 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
             # Generate training data
             X_train, y_train = self._generate_training_data(images, annotations)
 
+            if X_train.size == 0 or y_train.size == 0:
+                 logger.error("No training data generated. Check image processing and annotation matching.")
+                 raise IntersectionDetectionError("Failed to generate training data for CNN.")
+
+
             # Create data generator with augmentation
             datagen = ImageDataGenerator(
                 rotation_range=10,
@@ -1028,40 +1108,73 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 height_shift_range=0.1,
                 zoom_range=0.1,
                 brightness_range=[0.8, 1.2],
-                horizontal_flip=True,
-                vertical_flip=True,
-                validation_split=0.2
+                horizontal_flip=False, # Flips might change intersection context too much
+                vertical_flip=False,   # Flips might change intersection context too much
+                validation_split=0.2  # Use 20% of data for validation
             )
 
+            train_generator = datagen.flow(X_train, y_train, batch_size=32, subset='training')
+            validation_generator = datagen.flow(X_train, y_train, batch_size=32, subset='validation')
+
+
             # Configure model callbacks
+            model_checkpoint_path = 'temp_intersection_detector.keras' # Use .keras format
             callbacks = [
-                EarlyStopping(patience=10, restore_best_weights=True),
+                EarlyStopping(patience=10, restore_best_weights=True, monitor='val_loss'),
                 ModelCheckpoint(
-                    'temp_intersection_detector.h5',
+                    model_checkpoint_path,
                     save_best_only=True,
-                    monitor='val_loss'
+                    monitor='val_loss',
+                    save_format='keras' # Specify format
                 )
             ]
 
+             # Check if there's enough data for validation split
+            if len(X_train) * 0.2 < 1:
+                 logger.warning("Not enough data for validation split. Training without validation.")
+                 validation_generator = None
+                 callbacks = [ # Remove ModelCheckpoint if no validation monitor
+                      EarlyStopping(patience=10, restore_best_weights=True, monitor='loss')
+                 ]
+
+
             # Train model
-            self.model.fit(
-                datagen.flow(X_train, y_train, batch_size=32, subset='training'),
-                validation_data=datagen.flow(X_train, y_train, batch_size=32, subset='validation'),
-                epochs=50,
-                callbacks=callbacks,
-                verbose=1
+            history = self.model.fit(
+                 train_generator,
+                 validation_data=validation_generator,
+                 epochs=50, # Consider adjusting based on convergence
+                 callbacks=callbacks,
+                 verbose=1
             )
 
-            # Load best model
-            if os.path.exists('temp_intersection_detector.h5'):
-                self.model = load_model('temp_intersection_detector.h5')
-                os.remove('temp_intersection_detector.h5')
+
+            # Load best model if checkpointing was used and file exists
+            if os.path.exists(model_checkpoint_path):
+                try:
+                    self.model = load_model(model_checkpoint_path)
+                    logger.info(f"Loaded best model from {model_checkpoint_path}")
+                    os.remove(model_checkpoint_path)
+                except Exception as load_err:
+                    logger.error(f"Error loading best model checkpoint: {load_err}. Keeping the last trained model.")
+            elif 'val_loss' in history.history: # If EarlyStopping restored weights without saving best separately
+                 logger.info("Early stopping restored best weights during training.")
+            else:
+                 logger.warning("Model checkpoint file not found. Using the model from the end of training.")
+
 
             logger.info("CNN intersection detector training completed")
 
         except Exception as e:
             logger.error(f"Error training CNN intersection detector: {str(e)}")
+            # Clean up checkpoint file if it exists after an error
+            if os.path.exists(model_checkpoint_path):
+                try:
+                    os.remove(model_checkpoint_path)
+                except OSError as rm_err:
+                    logger.error(f"Could not remove temporary checkpoint file {model_checkpoint_path}: {rm_err}")
+
             raise IntersectionDetectionError(f"Failed to train intersection detector: {str(e)}")
+
 
     def _generate_training_data(
         self,
@@ -1082,14 +1195,133 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         X = []
         y = []
 
-        half_patch = self.patch_size // 2
+        patch_rows, patch_cols, _ = self.input_shape # Use model's expected input size
+        half_patch_rows = patch_rows // 2
+        half_patch_cols = patch_cols // 2
+
+
+        positive_count = 0
+        negative_count = 0
+
 
         # Process each image
-        for image, points in zip(images, annotations):
-            # Convert to grayscale
-            if len(image.shape) == 3:
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            else:
-                gray = image.copy()
+        for idx, (image, points) in enumerate(zip(images, annotations)):
+            try:
+                 # Validate and normalize image size first
+                 validate_image(image)
+                 image_norm, scale = normalize_image_size(image, min_size=300, max_size=1600)
+                 points_scaled = [(int(x * scale), int(y * scale)) for x, y in points]
 
-            # Preprocess image
+
+                 # Convert to grayscale
+                 if len(image_norm.shape) == 3:
+                     gray = cv2.cvtColor(image_norm, cv2.COLOR_BGR2GRAY)
+                 else:
+                     gray = image_norm.copy()
+
+                 # Preprocess image (normalization)
+                 gray_preprocessed = self._preprocess_image(gray)
+                 height, width = gray_preprocessed.shape
+
+                 # Create a set of ground truth points for faster lookup
+                 gt_points_set = set(points_scaled)
+                 processed_centers = set() # Keep track of centers already processed
+
+
+                 # 1. Extract positive samples (centered on ground truth points)
+                 for pt_x, pt_y in points_scaled:
+                      center_key = (pt_x, pt_y)
+                      if not (0 <= pt_x < width and 0 <= pt_y < height) or center_key in processed_centers:
+                          continue # Skip points outside bounds or already processed
+
+                      # Define patch boundaries, ensuring they are within the image
+                      y_start = max(0, pt_y - half_patch_rows)
+                      y_end = min(height, pt_y + half_patch_rows + (patch_rows % 2)) # Add 1 if odd
+                      x_start = max(0, pt_x - half_patch_cols)
+                      x_end = min(width, pt_x + half_patch_cols + (patch_cols % 2)) # Add 1 if odd
+
+                      patch = gray_preprocessed[y_start:y_end, x_start:x_end]
+
+                      # Pad if patch is smaller than target size (due to being near edge)
+                      pad_top = max(0, half_patch_rows - (pt_y - y_start))
+                      pad_bottom = max(0, (pt_y + half_patch_rows + (patch_rows % 2)) - y_end)
+                      pad_left = max(0, half_patch_cols - (pt_x - x_start))
+                      pad_right = max(0, (pt_x + half_patch_cols + (patch_cols % 2)) - x_end)
+
+                      if pad_top > 0 or pad_bottom > 0 or pad_left > 0 or pad_right > 0:
+                           patch = np.pad(patch, ((pad_top, pad_bottom), (pad_left, pad_right)), mode='constant', constant_values=0)
+
+
+                      # Resize to ensure exact input shape (handles minor size mismatches)
+                      if patch.shape != (patch_rows, patch_cols):
+                          patch = cv2.resize(patch, (patch_cols, patch_rows), interpolation=cv2.INTER_LINEAR)
+
+
+                      X.append(patch)
+                      y.append(1.0) # Positive sample
+                      positive_count += 1
+                      processed_centers.add(center_key)
+
+
+                 # 2. Extract negative samples (randomly sampled patches not overlapping positives)
+                 num_negatives_per_image = len(points_scaled) * 2 # Aim for more negatives
+                 neg_added = 0
+                 attempts = 0
+                 max_attempts = num_negatives_per_image * 10 # Limit attempts
+
+
+                 while neg_added < num_negatives_per_image and attempts < max_attempts:
+                      attempts += 1
+                      # Randomly select center point for negative patch
+                      rand_y = random.randint(half_patch_rows, height - half_patch_rows - 1)
+                      rand_x = random.randint(half_patch_cols, width - half_patch_cols - 1)
+                      center_key = (rand_x, rand_y)
+
+
+                      # Check if it overlaps with any ground truth point (or already processed centers)
+                      is_positive_overlap = False
+                      for gt_x, gt_y in gt_points_set:
+                           # Simple distance check: if random center is too close to a ground truth point
+                           dist_sq = (rand_x - gt_x)**2 + (rand_y - gt_y)**2
+                           if dist_sq < (max(half_patch_rows, half_patch_cols))**2: # Overlap check
+                                is_positive_overlap = True
+                                break
+
+                      if not is_positive_overlap and center_key not in processed_centers:
+                           # Extract patch (should be within bounds due to randint range)
+                           patch = gray_preprocessed[rand_y-half_patch_rows : rand_y+half_patch_rows+(patch_rows%2),
+                                                     rand_x-half_patch_cols : rand_x+half_patch_cols+(patch_cols%2)]
+
+                           if patch.shape == (patch_rows, patch_cols): # Ensure correct shape
+                                X.append(patch)
+                                y.append(0.0) # Negative sample
+                                negative_count += 1
+                                neg_added += 1
+                                processed_centers.add(center_key) # Mark this center as used
+
+
+            except Exception as e:
+                 logger.error(f"Error processing image {idx} for training data generation: {e}")
+                 continue # Skip this image if processing fails
+
+
+        logger.info(f"Generated {positive_count} positive and {negative_count} negative samples.")
+
+
+        if not X or not y:
+            logger.warning("No samples generated. Returning empty arrays.")
+            return np.array([]), np.array([])
+
+
+        # Convert lists to numpy arrays and add channel dimension
+        X_array = np.array(X).reshape(-1, patch_rows, patch_cols, 1)
+        y_array = np.array(y)
+
+
+        # Shuffle data
+        indices = np.arange(X_array.shape[0])
+        np.random.shuffle(indices)
+        X_array = X_array[indices]
+        y_array = y_array[indices]
+
+        return X_array, y_array
