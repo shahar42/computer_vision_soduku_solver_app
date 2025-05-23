@@ -18,6 +18,7 @@ from models.grid_reconstructor import RobustGridReconstructor
 from models.cell_extractor import RobustCellExtractor
 from models.digit_recognizer import RobustDigitRecognizer
 from models.solver import RobustSolver
+from models.board_detector import BoardDetector
 from config.settings import get_settings
 from utils.error_handling import (
     SudokuRecognizerError, ImageLoadError, DetectionError, IntersectionDetectionError,
@@ -57,6 +58,8 @@ class SudokuRecognizerPipeline:
         """
         # Load settings
         self.settings = get_settings()
+        self.board_detector = None
+        self.use_board_detection = True
         
         # Pipeline settings
         self.pipeline_settings = self.settings.get_nested("pipeline")

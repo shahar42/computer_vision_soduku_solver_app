@@ -974,6 +974,9 @@ class RobustGridReconstructor(GridReconstructorBase):
         return ransac_saved and homography_saved
 
     @robust_method(max_retries=1, timeout_sec=60.0) # Allow more time overall
+
+
+
     def reconstruct(self, points: List[PointType], image_shape: Tuple[int, int]) -> GridPointsType:
         """
         Reconstruct grid from intersection points using multiple methods with fallback.
@@ -1163,3 +1166,185 @@ class RobustGridReconstructor(GridReconstructorBase):
                 grid_points.append(row_points)
 
         return grid_points
+
+"""
+Enhanced Grid Reconstructor with Board Detection Integration.
+
+This adds board-aware reconstruction with the 82% intersection usage requirement.
+"""
+
+import logging
+from typing import List, Tuple, Optional
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Add this method to your existing RobustGridReconstructor class
+class BoardAwareGridReconstructor:
+    """
+    Extension methods for RobustGridReconstructor to add board detection integration.
+    """
+
+    def reconstruct_with_board_detection(
+        self,
+        points: List[Tuple[int, int]],
+        image_shape: Tuple[int, int],
+        board_bbox: Optional[Tuple[int, int, int, int]] = None,
+        filtered_points: Optional[List[Tuple[int, int]]] = None
+    ) -> List[List[Tuple[int, int]]]:
+        """
+        Reconstruct grid with board detection constraints and 82% usage requirement.
+
+        Args:
+            points: All detected intersection points
+            image_shape: Shape of the original image
+            board_bbox: Board bounding box (x1, y1, x2, y2) if available
+            filtered_points: Pre-filtered points within board boundary
+
+        Returns:
+            2D list of ordered grid points (10x10 for standard Sudoku)
+        """
+
+        # Use filtered points if provided, otherwise use all points
+        working_points = filtered_points if filtered_points is not None else points
+        total_filtered_points = len(working_points)
+
+        # Check if we have enough points after filtering
+        if total_filtered_points < 78:  # Your 78% fallback threshold
+            logger.warning(f"Only {total_filtered_points} points after filtering, falling back to full image")
+            return self._fallback_to_full_image_reconstruction(points, image_shape)
+
+        logger.info(f"Attempting board-aware reconstruction with {total_filtered_points} filtered points")
+
+        # Try reconstruction with expanding RANSAC parameters
+        for attempt in range(3):  # Original + 2 expansion attempts
+
+            if attempt == 0:
+                # Use original parameters
+                logger.info("Attempt 1: Using original RANSAC parameters")
+                modified_reconstructor = self._get_reconstructor_copy()
+
+            elif attempt == 1:
+                # First expansion: +1 min_line_points, 1.2x threshold
+                logger.info("Attempt 2: Expanding RANSAC parameters (gentle)")
+                modified_reconstructor = self._get_reconstructor_copy()
+                modified_reconstructor.ransac_reconstructor.min_line_points += 1
+                modified_reconstructor.ransac_reconstructor.ransac_threshold *= 1.2
+
+            elif attempt == 2:
+                # Second expansion: +3 total min_line_points, 1.56x total threshold
+                logger.info("Attempt 3: Expanding RANSAC parameters (aggressive)")
+                modified_reconstructor = self._get_reconstructor_copy()
+                modified_reconstructor.ransac_reconstructor.min_line_points += 3
+                modified_reconstructor.ransac_reconstructor.ransac_threshold *= 1.56  # 1.2 * 1.3
+
+            try:
+                # Attempt reconstruction with current parameters
+                grid_points = modified_reconstructor.ransac_reconstructor.reconstruct(
+                    working_points, image_shape
+                )
+
+                # Calculate intersection usage percentage
+                usage_percentage = self._calculate_intersection_usage(
+                    working_points, grid_points, image_shape
+                )
+
+                logger.info(f"Attempt {attempt + 1}: Used {usage_percentage:.1f}% of filtered intersections")
+
+                # Check if we meet the 82% requirement
+                if usage_percentage >= 82.0:
+                    logger.info(f"✅ 82% requirement met with {usage_percentage:.1f}% usage")
+                    return grid_points
+                else:
+                    logger.info(f"❌ Only {usage_percentage:.1f}% usage, trying next expansion")
+
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                continue
+
+        # If all expansion attempts failed, fall back
+        logger.warning("All board-aware attempts failed, falling back to original method")
+        return self._fallback_to_full_image_reconstruction(points, image_shape)
+
+    def _get_reconstructor_copy(self):
+        """Get a copy of the current reconstructor for parameter modification."""
+        # This creates a copy so we don't modify the original
+        from copy import deepcopy
+        return deepcopy(self)
+
+    def _calculate_intersection_usage(
+        self,
+        input_points: List[Tuple[int, int]],
+        grid_points: List[List[Tuple[int, int]]],
+        image_shape: Tuple[int, int]
+    ) -> float:
+        """
+        Calculate what percentage of input intersections were used in grid construction.
+
+        Args:
+            input_points: Original intersection points
+            grid_points: Reconstructed grid points
+            image_shape: Image dimensions
+
+        Returns:
+            Percentage of input points that contributed to the grid
+        """
+        if not input_points or not grid_points:
+            return 0.0
+
+        # Flatten grid points
+        grid_flat = []
+        for row in grid_points:
+            for point in row:
+                grid_flat.append(point)
+
+        # Count how many input points are "close" to grid intersections
+        used_count = 0
+        threshold = 15  # Pixels - adjust based on your needs
+
+        for input_point in input_points:
+            for grid_point in grid_flat:
+                distance = np.sqrt(
+                    (input_point[0] - grid_point[0])**2 +
+                    (input_point[1] - grid_point[1])**2
+                )
+                if distance <= threshold:
+                    used_count += 1
+                    break  # Don't double-count
+
+        usage_percentage = (used_count / len(input_points)) * 100
+        return usage_percentage
+
+    def _fallback_to_full_image_reconstruction(
+        self,
+        all_points: List[Tuple[int, int]],
+        image_shape: Tuple[int, int]
+    ) -> List[List[Tuple[int, int]]]:
+        """
+        Fallback to original reconstruction method using all points.
+
+        Args:
+            all_points: All detected intersection points
+            image_shape: Image dimensions
+
+        Returns:
+            Reconstructed grid using original method
+        """
+        logger.info("Using fallback reconstruction with all intersection points")
+        return self.ransac_reconstructor.reconstruct(all_points, image_shape)
+
+
+# Add these methods to your existing RobustGridReconstructor class
+def add_board_detection_methods(cls):
+    """
+    Add board detection methods to existing RobustGridReconstructor class.
+    """
+    # Copy methods from BoardAwareGridReconstructor
+    cls.reconstruct_with_board_detection = BoardAwareGridReconstructor.reconstruct_with_board_detection
+    cls._get_reconstructor_copy = BoardAwareGridReconstructor._get_reconstructor_copy
+    cls._calculate_intersection_usage = BoardAwareGridReconstructor._calculate_intersection_usage
+    cls._fallback_to_full_image_reconstruction = BoardAwareGridReconstructor._fallback_to_full_image_reconstruction
+
+    return cls
+
+add_board_detection_methods(RobustGridReconstructor)

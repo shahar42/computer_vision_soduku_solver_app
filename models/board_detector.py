@@ -1,0 +1,189 @@
+"""
+Board Detector Module.
+
+This module implements Sudoku board detection to provide bounding boxes
+for filtering intersection points and improving grid reconstruction.
+"""
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+import logging
+from typing import Tuple, Optional
+
+logger = logging.getLogger(__name__)
+
+class BoardDetector:
+    """
+    Board detector for identifying Sudoku grid boundaries.
+    """
+    
+    def __init__(self, model_path: str = None, confidence_threshold: float = 0.5):
+        """
+        Initialize board detector.
+        
+        Args:
+            model_path: Path to trained board detection model
+            confidence_threshold: Minimum confidence for valid detection
+        """
+        self.model = None
+        self.confidence_threshold = confidence_threshold
+        self.model_input_size = 416  # Based on your training
+        
+        if model_path:
+            self.load_model(model_path)
+    
+    def load_model(self, model_path: str) -> bool:
+        """
+        Load the board detection model.
+        
+        Args:
+            model_path: Path to .h5 model file
+            
+        Returns:
+            True if successful
+        """
+        try:
+            if os.path.exists(model_path):
+                self.model = tf.keras.models.load_model(model_path)
+                logger.info(f"Board detection model loaded from {model_path}")
+                return True
+            else:
+                logger.warning(f"Model file not found: {model_path}")
+                return False
+        except Exception as e:
+            logger.error(f"Error loading board detection model: {str(e)}")
+            return False
+    
+    def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
+        """
+        Preprocess image for board detection (416x416 with padding).
+        
+        Args:
+            image: Input image
+            
+        Returns:
+            Tuple of (preprocessed_image, scale_factor)
+        """
+        height, width = image.shape[:2]
+        
+        # Calculate scale to fit within 416x416 while maintaining aspect ratio
+        scale = min(self.model_input_size / width, self.model_input_size / height)
+        
+        # Resize image
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        resized = cv2.resize(image, (new_width, new_height))
+        
+        # Create padded image
+        padded = np.zeros((self.model_input_size, self.model_input_size, 3), dtype=np.uint8)
+        
+        # Calculate padding offsets to center the image
+        y_offset = (self.model_input_size - new_height) // 2
+        x_offset = (self.model_input_size - new_width) // 2
+        
+        # Place resized image in center of padded image
+        padded[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized
+        
+        # Normalize to [0, 1]
+        preprocessed = padded.astype(np.float32) / 255.0
+        
+        return preprocessed, scale, x_offset, y_offset
+    
+    def detect(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int, float]]:
+        """
+        Detect Sudoku board in image.
+        
+        Args:
+            image: Input image
+            
+        Returns:
+            Tuple of (x1, y1, x2, y2, confidence) in original image coordinates,
+            or None if no valid detection
+        """
+        if self.model is None:
+            logger.warning("Board detection model not loaded")
+            return None
+        
+        try:
+            # Preprocess image
+            preprocessed, scale, x_offset, y_offset = self.preprocess_image(image)
+            
+            # Run inference
+            input_batch = np.expand_dims(preprocessed, axis=0)
+            prediction = self.model.predict(input_batch, verbose=0)[0]
+            
+            # Extract coordinates and confidence
+            x1_norm, y1_norm, x2_norm, y2_norm, confidence = prediction
+            
+            # Check confidence threshold
+            if confidence < self.confidence_threshold:
+                logger.info(f"Board detection confidence too low: {confidence:.3f} < {self.confidence_threshold}")
+                return None
+            
+            # Convert from normalized coordinates to preprocessed image coordinates
+            x1_prep = x1_norm * self.model_input_size
+            y1_prep = y1_norm * self.model_input_size
+            x2_prep = x2_norm * self.model_input_size
+            y2_prep = y2_norm * self.model_input_size
+            
+            # Convert from preprocessed coordinates to original image coordinates
+            x1_orig = int((x1_prep - x_offset) / scale)
+            y1_orig = int((y1_prep - y_offset) / scale)
+            x2_orig = int((x2_prep - x_offset) / scale)
+            y2_orig = int((y2_prep - y_offset) / scale)
+            
+            # Clamp to image boundaries
+            height, width = image.shape[:2]
+            x1_orig = max(0, min(x1_orig, width - 1))
+            y1_orig = max(0, min(y1_orig, height - 1))
+            x2_orig = max(0, min(x2_orig, width - 1))
+            y2_orig = max(0, min(y2_orig, height - 1))
+            
+            logger.info(f"Board detected with confidence {confidence:.3f}: ({x1_orig}, {y1_orig}, {x2_orig}, {y2_orig})")
+            
+            return (x1_orig, y1_orig, x2_orig, y2_orig, float(confidence))
+            
+        except Exception as e:
+            logger.error(f"Error in board detection: {str(e)}")
+            return None
+    
+    def filter_intersections(self, intersections: list, board_bbox: Tuple[int, int, int, int]) -> list:
+        """
+        Filter intersections to only include those within board boundary + margin.
+        
+        Args:
+            intersections: List of (x, y) intersection points
+            board_bbox: Board bounding box (x1, y1, x2, y2)
+            
+        Returns:
+            Filtered list of intersection points
+        """
+        if not intersections or not board_bbox:
+            return intersections
+        
+        x1, y1, x2, y2 = board_bbox
+        
+        # Calculate margin based on diagonal
+        width = x2 - x1
+        height = y2 - y1
+        diagonal = np.sqrt(width**2 + height**2)
+        margin = diagonal / 14  # As discussed
+        
+        # Create expanded boundary
+        x1_margin = x1 - margin
+        y1_margin = y1 - margin
+        x2_margin = x2 + margin
+        y2_margin = y2 + margin
+        
+        # Filter intersections
+        filtered = []
+        for x, y in intersections:
+            if (x1_margin <= x <= x2_margin and 
+                y1_margin <= y <= y2_margin):
+                filtered.append((x, y))
+        
+        logger.info(f"Filtered intersections: {len(intersections)} → {len(filtered)} (kept {len(filtered)/len(intersections)*100:.1f}%)")
+        
+        return filtered
