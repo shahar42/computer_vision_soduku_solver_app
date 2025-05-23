@@ -447,7 +447,8 @@ class SudokuRecognizerPipeline:
     def _detect_grid(self) -> Dict[str, Any]:
         """
         Detect Sudoku grid in image using board detection when available.
-        
+        Now includes minimum intersections per line reconstruction method.
+
         Returns:
             Dictionary with grid detection results
         """
@@ -456,18 +457,18 @@ class SudokuRecognizerPipeline:
             image = self.current_state["image"]
             if image is None:
                 raise PipelineError("No image to detect grid in")
-            
+
             # Initialize variables
             board_detected = False
             board_bbox = None
             filtered_intersections = None
-            
+
             # Step 1: Try board detection if available
             if self.use_board_detection and self.board_detector is not None:
                 try:
                     logger.info("🎯 Running board detection...")
                     board_bbox, confidence = self.board_detector.detect(image)
-                    
+
                     if board_bbox is not None and confidence >= 0.5:
                         logger.info(f"✅ Board detected with confidence {confidence:.3f}")
                         board_detected = True
@@ -475,21 +476,21 @@ class SudokuRecognizerPipeline:
                         logger.info(f"Board detection failed or low confidence ({confidence:.3f}), falling back to intersection-only method")
                 except Exception as e:
                     logger.warning(f"Board detection error: {str(e)}. Falling back to intersection-only method")
-                    
+
             # Step 2: Detect intersections (always needed)
             intersections = self.intersection_detector.detect(image)
-            
+
             # Verify we have enough intersections
             if len(intersections) < 20:
                 raise IntersectionDetectionError(
                     f"Insufficient intersections detected: {len(intersections)}"
                 )
-                
+
             logger.info(f"Detected {len(intersections)} grid intersections")
-            
+
             # Store in current state
             self.current_state["intersections"] = intersections
-            
+
             # Step 3: Filter intersections if board was detected
             if board_detected and board_bbox is not None:
                 x1, y1, x2, y2 = board_bbox
@@ -497,62 +498,114 @@ class SudokuRecognizerPipeline:
                 diagonal = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 # Calculate margin (diagonal/14 as per requirements)
                 margin = diagonal / 14
-                
+
                 # Expand bounding box by margin
                 x1_expanded = max(0, x1 - margin)
                 y1_expanded = max(0, y1 - margin)
                 x2_expanded = min(image.shape[1] - 1, x2 + margin)
                 y2_expanded = min(image.shape[0] - 1, y2 + margin)
-                
+
                 # Filter intersections to those within expanded bbox
                 filtered_intersections = []
                 for point in intersections:
                     x, y = point
                     if (x1_expanded <= x <= x2_expanded and y1_expanded <= y <= y2_expanded):
                         filtered_intersections.append(point)
-                        
+
                 logger.info(f"Filtered intersections: {len(intersections)} → {len(filtered_intersections)} (kept {len(filtered_intersections)/len(intersections)*100:.1f}%)")
-                
+
                 # Check if we have enough filtered intersections
                 if len(filtered_intersections) < 78:  # As per requirements
                     logger.warning(f"Too few filtered intersections ({len(filtered_intersections)}), falling back to all intersections")
                     filtered_intersections = None
-            
-            # Step 4: Reconstruct grid
-            if board_detected and filtered_intersections is not None and len(filtered_intersections) >= 78:
-                # Use board-aware reconstruction with 82% requirement
-                grid_points = self.grid_reconstructor.reconstruct_with_board_detection(
-                    intersections, image.shape, board_bbox, filtered_intersections
-                )
-            else:
-                # Use standard reconstruction
-                grid_points = self.grid_reconstructor.reconstruct(intersections, image.shape)
-            
+
+            # Step 4: Reconstruct grid with new intelligent method selection
+            grid_points = None
+            reconstruction_methods = self.settings.get_nested("grid_reconstructor").get(
+                "reconstruction_method_order",
+                ["min_intersections", "board_detection", "standard"]
+            )
+
+            for method in reconstruction_methods:
+                try:
+                    if method == "min_intersections" and board_bbox is not None:
+                        # Use the new minimum intersections per line method
+                        use_min_intersections = self.settings.get_nested("grid_reconstructor").get(
+                            "use_min_intersections_method", True
+                        )
+
+                        if use_min_intersections:
+                            min_points_per_line = self.settings.get_nested("grid_reconstructor").get(
+                                "min_points_per_line", 7
+                            )
+
+                            logger.info(f"Trying minimum intersections per line method (min={min_points_per_line})")
+
+                            grid_points = self.grid_reconstructor.reconstruct_with_min_intersections_per_line(
+                                intersections,  # All points for context
+                                image.shape,
+                                board_bbox,
+                                filtered_intersections,  # Filtered points if available
+                                min_points_per_line=min_points_per_line
+                            )
+
+                            logger.info("✅ Grid reconstructed using minimum intersections per line method")
+                            break
+
+                    elif method == "board_detection" and board_detected and filtered_intersections is not None:
+                        # Use board-aware reconstruction with 82% requirement
+                        logger.info("Trying board-aware reconstruction with 82% requirement")
+
+                        grid_points = self.grid_reconstructor.reconstruct_with_board_detection(
+                            intersections, image.shape, board_bbox, filtered_intersections
+                        )
+
+                        logger.info("✅ Grid reconstructed using board detection method")
+                        break
+
+                    elif method == "standard":
+                        # Use standard reconstruction
+                        logger.info("Trying standard grid reconstruction")
+
+                        grid_points = self.grid_reconstructor.reconstruct(intersections, image.shape)
+
+                        logger.info("✅ Grid reconstructed using standard method")
+                        break
+
+                except Exception as e:
+                    logger.warning(f"Method '{method}' failed: {str(e)}")
+                    continue
+
+            # If no method succeeded, raise error
+            if grid_points is None:
+                raise GridReconstructionError("All grid reconstruction methods failed")
+
             # Verify grid dimensions
             if len(grid_points) != 10 or any(len(row) != 10 for row in grid_points):
                 raise GridReconstructionError(
                     f"Invalid grid dimensions: {len(grid_points)}x{len(grid_points[0]) if grid_points else 0}"
                 )
-                
+
             logger.info("Grid reconstructed successfully")
-            
+
             # Store in current state
             self.current_state["grid_points"] = grid_points
-            
+
             # Save intermediates if enabled
             if self.save_intermediates:
                 self._save_grid_detection_intermediates(image, intersections, grid_points)
-                
+
             return {
                 "intersections": len(intersections),
                 "filtered_intersections": len(filtered_intersections) if filtered_intersections else None,
                 "board_detected": board_detected,
-                "grid_dimensions": (len(grid_points), len(grid_points[0]))
+                "grid_dimensions": (len(grid_points), len(grid_points[0])),
+                "reconstruction_method": method  # Track which method succeeded
             }
-            
+
         except Exception as e:
             logger.error(f"Error detecting grid: {str(e)}")
-            
+
             if isinstance(e, (IntersectionDetectionError, GridReconstructionError)):
                 # Rethrow specific errors
                 raise

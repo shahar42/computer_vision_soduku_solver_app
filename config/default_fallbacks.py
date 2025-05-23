@@ -43,6 +43,9 @@ DEFAULT_CONFIG = {
         "use_homography": True,
         "use_grid_refinement": True,
         "max_perspective_distortion": 45,  # Max perspective angle in degrees
+        "use_min_intersections_method": True,  # Enable new method
+        "min_points_per_line": 7,  # Minimum intersections per line
+        "reconstruction_method_order": ["min_intersections", "board_detection", "standard"],
         "grid_detection_methods": ["ransac", "hough", "contour"],
     },
     
