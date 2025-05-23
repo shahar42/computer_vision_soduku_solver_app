@@ -1234,3 +1234,293 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         y_array = y_array[indices]
 
         return X_array, y_array
+
+
+class RobustIntersectionDetector(IntersectionDetectorBase):
+    """
+    Robust intersection detector with multiple methods and fallback mechanisms.
+
+    This class combines CNN-based and traditional CV-based detectors for
+    robustness, with intelligent method selection and fallback strategies.
+    """
+
+    def __init__(self):
+        """Initialize robust intersection detector with multiple methods."""
+        self.settings = get_settings().get_nested("intersection_detector")
+
+        # Initialize detectors
+        self.cnn_detector = CNNIntersectionDetector()
+        self.cv_detector = CVIntersectionDetector()
+
+        # Default method order
+        self.detection_methods = self.settings.get(
+            "detection_methods",
+            ["cnn", "hough", "adaptive_threshold"]
+        )
+
+        # Fallback settings
+        self.fallback_to_cv = self.settings.get("fallback_to_cv", True)
+        self.use_ensemble = self.settings.get("use_ensemble", True)
+
+        # Confidence threshold for ensemble
+        self.ensemble_min_points = 20
+
+    def load(self, model_path: str) -> bool:
+        """
+        Load models from files.
+
+        Args:
+            model_path: Base path for model files
+
+        Returns:
+            True if at least one model was loaded successfully
+        """
+        # Determine model paths
+        cnn_path = model_path
+        cv_path = os.path.splitext(model_path)[0] + "_cv.pkl"
+
+        # Load models
+        cnn_loaded = self.cnn_detector.load(cnn_path)
+        cv_loaded = self.cv_detector.load(cv_path)
+
+        # Log results
+        if cnn_loaded:
+            logger.info("CNN intersection detector loaded successfully")
+        else:
+            logger.warning("Failed to load CNN intersection detector")
+
+        if cv_loaded:
+            logger.info("CV intersection detector loaded successfully")
+        else:
+            logger.warning("Failed to load CV intersection detector")
+
+        # Return True if at least one model was loaded
+        return cnn_loaded or cv_loaded
+
+    def save(self, model_path: str) -> bool:
+        """
+        Save models to files.
+
+        Args:
+            model_path: Base path for model files
+
+        Returns:
+            True if both models were saved successfully
+        """
+        # Determine model paths
+        cnn_path = model_path
+        cv_path = os.path.splitext(model_path)[0] + "_cv.pkl"
+
+        # Save models
+        cnn_saved = self.cnn_detector.save(cnn_path)
+        cv_saved = self.cv_detector.save(cv_path)
+
+        # Log results
+        if cnn_saved:
+            logger.info(f"CNN intersection detector saved to {cnn_path}")
+        else:
+            logger.warning(f"Failed to save CNN intersection detector to {cnn_path}")
+
+        if cv_saved:
+            logger.info(f"CV intersection detector saved to {cv_path}")
+        else:
+            logger.warning(f"Failed to save CV intersection detector to {cv_path}")
+
+        # Return True only if both models were saved
+        return cnn_saved and cv_saved
+
+    @robust_method(max_retries=3, timeout_sec=60.0)
+    def detect(self, image: ImageType) -> List[PointType]:
+        """
+        Detect grid line intersections using multiple methods with fallback.
+
+        Args:
+            image: Input image
+
+        Returns:
+            List of intersection points (x, y)
+
+        Raises:
+            IntersectionDetectionError: If all detection methods fail
+        """
+        # Validate input
+        validate_image(image)
+
+        # If ensemble mode is enabled, try multiple methods and combine results
+        if self.use_ensemble:
+            return self._detect_ensemble(image)
+
+        # Otherwise, try methods in order with fallback
+        errors = []
+
+        for method in self.detection_methods:
+            try:
+                if method == "cnn":
+                    logger.info("Trying CNN-based intersection detection")
+                    return self.cnn_detector.detect(image)
+                elif method == "hough":
+                    logger.info("Trying Hough-based intersection detection")
+                    # Use CV detector with focus on Hough transform
+                    self.cv_detector._detect_with_canny_edges(
+                        cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+                    )
+                elif method == "adaptive_threshold":
+                    logger.info("Trying adaptive threshold intersection detection")
+                    # Use CV detector with focus on adaptive thresholding
+                    return self.cv_detector.detect(image)
+                else:
+                    logger.warning(f"Unknown detection method: {method}")
+
+            except Exception as e:
+                logger.warning(f"Method {method} failed: {str(e)}")
+                errors.append((method, str(e)))
+
+        # If all methods failed, raise error
+        error_details = "\n".join([f"{method}: {error}" for method, error in errors])
+        raise IntersectionDetectionError(f"All intersection detection methods failed:\n{error_details}")
+
+    def _detect_ensemble(self, image: ImageType) -> List[PointType]:
+        """
+        Detect intersections using ensemble of methods.
+
+        Args:
+            image: Input image
+
+        Returns:
+            List of combined intersection points
+
+        Raises:
+            IntersectionDetectionError: If ensemble detection fails
+        """
+        # Results from different methods
+        all_points = []
+        errors = []
+
+        # Try CNN method
+        try:
+            cnn_points = self.cnn_detector.detect(image)
+            if len(cnn_points) >= self.ensemble_min_points:
+                all_points.append(("cnn", cnn_points))
+                logger.info(f"CNN detector found {len(cnn_points)} intersections")
+        except Exception as e:
+            logger.warning(f"CNN detector failed: {str(e)}")
+            errors.append(("cnn", str(e)))
+
+        # Try CV method
+        try:
+            cv_points = self.cv_detector.detect(image)
+            if len(cv_points) >= self.ensemble_min_points:
+                all_points.append(("cv", cv_points))
+                logger.info(f"CV detector found {len(cv_points)} intersections")
+        except Exception as e:
+            logger.warning(f"CV detector failed: {str(e)}")
+            errors.append(("cv", str(e)))
+
+        # If no methods succeeded, raise error
+        if not all_points:
+            error_details = "\n".join([f"{method}: {error}" for method, error in errors])
+            raise IntersectionDetectionError(f"All intersection detection methods failed:\n{error_details}")
+
+        # If only one method succeeded, return its results
+        if len(all_points) == 1:
+            return all_points[0][1]
+
+        # Otherwise, combine results
+        return self._combine_results([points for _, points in all_points])
+
+    def _combine_results(self, point_sets: List[List[PointType]]) -> List[PointType]:
+        """
+        Combine intersection points from multiple detectors.
+
+        Args:
+            point_sets: List of point sets from different detectors
+
+        Returns:
+            Combined list of intersection points
+        """
+        if not point_sets:
+            return []
+
+        # If only one set, return it
+        if len(point_sets) == 1:
+            return point_sets[0]
+
+        # Flatten all points with confidence 1.0
+        all_points = []
+        for points in point_sets:
+            all_points.extend([(p, 1.0) for p in points])
+
+        # Cluster points
+        clusters = []
+        cluster_distance = 15  # Maximum distance for points to be considered same intersection
+
+        for point, conf in all_points:
+            x, y = point
+
+            # Check if point is close to any existing cluster
+            found_cluster = False
+            for i, cluster in enumerate(clusters):
+                cluster_points = [p for p, _ in cluster]
+
+                # Find closest point in cluster
+                min_distance = float('inf')
+                for cx, cy in cluster_points:
+                    distance = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+                    min_distance = min(min_distance, distance)
+
+                if min_distance < cluster_distance:
+                    # Add point to existing cluster
+                    cluster.append((point, conf))
+                    found_cluster = True
+                    break
+
+            if not found_cluster:
+                # Create new cluster
+                clusters.append([(point, conf)])
+
+        # For each cluster, calculate consensus point
+        # Points that appear in multiple detection methods have higher weight
+        consensus_points = []
+
+        for cluster in clusters:
+            # Count points from different detectors
+            if len(cluster) > len(point_sets) / 2:
+                # Calculate average point
+                avg_x = sum(x for (x, y), _ in cluster) / len(cluster)
+                avg_y = sum(y for (x, y), _ in cluster) / len(cluster)
+
+                consensus_points.append((int(round(avg_x)), int(round(avg_y))))
+
+        # Return consensus points
+        return consensus_points
+
+    def train(self, images: List[ImageType], annotations: List[List[PointType]]) -> None:
+        """
+        Train both intersection detectors.
+
+        Args:
+            images: List of training images
+            annotations: List of intersection point annotations for each image
+
+        Raises:
+            IntersectionDetectionError: If training fails
+        """
+        # Train CNN detector
+        try:
+            logger.info("Training CNN intersection detector")
+            self.cnn_detector.train(images, annotations)
+        except Exception as e:
+            logger.error(f"Failed to train CNN detector: {str(e)}")
+            # Don't raise error, try CV detector
+
+        # Train CV detector
+        try:
+            logger.info("Training CV intersection detector")
+            self.cv_detector.train(images, annotations)
+        except Exception as e:
+            logger.error(f"Failed to train CV detector: {str(e)}")
+            # Don't raise error
+
+        # If both failed, raise error
+        if not hasattr(self.cnn_detector, 'model') and not hasattr(self.cv_detector, 'block_size'):
+            raise IntersectionDetectionError("Failed to train both intersection detectors")
