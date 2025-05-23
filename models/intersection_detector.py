@@ -1,8 +1,6 @@
 """
  Intersection Detector Module.
 
- This module implements intersection detection using both CNN and traditional
- computer vision approaches with robust error handling and fallback mechanisms.
  """
 
 import os
@@ -38,15 +36,6 @@ logger = logging.getLogger(__name__)
 
 
 class CVIntersectionDetector(IntersectionDetectorBase):
-    """
-    Traditional computer vision-based intersection detector.
-
-    This class implements intersection detection using traditional CV methods:
-    1. Adaptive thresholding to extract grid lines
-    2. Hough transform to detect lines
-    3. Computing line intersections
-    4. Clustering similar intersection points
-    """
 
     def __init__(self):
         """Initialize CV-based intersection detector with default parameters."""
@@ -69,15 +58,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         self.cluster_distance = 10
 
     def load(self, model_path: str) -> bool:
-        """
-        Load model parameters from file.
 
-        Args:
-            model_path: Path to parameter file
-
-        Returns:
-            True if successful
-        """
         try:
             if os.path.exists(model_path):
                 with open(model_path, 'rb') as f:
@@ -99,15 +80,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
             return False
 
     def save(self, model_path: str) -> bool:
-        """
-        Save model parameters to file.
 
-        Args:
-            model_path: Path to save parameter file
-
-        Returns:
-            True if successful
-        """
         try:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -136,15 +109,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
             return False
 
     def detect_with_hough(self, image: ImageType) -> List[PointType]:
-        """
-        Detect grid line intersections using Hough transform.
 
-        Args:
-            image: Input image
-
-        Returns:
-            List of intersection points (x, y)
-        """
         # Convert to grayscale if needed
         gray_image_hough = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image.copy()
 
@@ -168,8 +133,6 @@ class CVIntersectionDetector(IntersectionDetectorBase):
                 if is_valid_intersection_point((x, y), image.shape)
             ]
 
-            # Add the standard offset
-            filtered_points = [(x + 7, y + 10) for x, y in filtered_points]
 
             return filtered_points
 
@@ -177,18 +140,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
 
     @robust_method(max_retries=2, timeout_sec=56.0)
     def detect(self, image: ImageType) -> List[PointType]:
-        """
-        Detect grid line intersections using computer vision techniques.
 
-        Args:
-            image: Input image
-
-        Returns:
-            List of intersection points (x, y)
-
-        Raises:
-            IntersectionDetectionError: If detection fails
-        """
         try:
             # Validate input
             validate_image(image)
@@ -269,7 +221,6 @@ class CVIntersectionDetector(IntersectionDetectorBase):
             logger.info(f"Detected {len(filtered_points)} intersections")
 
             # FIX 1: Add the same (+7, +10) offset as in CNNIntersectionDetector for consistency
-            filtered_points = [(x + 7, y + 10) for x, y in filtered_points]
 
             return filtered_points
 
@@ -754,7 +705,10 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         self.input_shape = (32, 32, 1)  # Patch size
         self.confidence_threshold = self.settings.get("confidence_threshold", 0.77)
         self.patch_size = self.settings.get("patch_size", 15)
-        self.stride = self.patch_size // 2  # Stride for sliding window
+
+        self.stride = self.patch_size // 4  # Stride for sliding window
+        self.x_correction = self.settings.get("x_correction", 0) # Default to 0 if not in settings
+        self.y_correction = self.settings.get("y_correction", 0) # Default to 0 if not in settings
 
         # Build model
         self.model = self._build_model()
@@ -931,10 +885,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 )
 
             logger.info(f"CNN detected {len(filtered_points)} intersections")
-
-            # Add the same (+7, +10) offset as in CVIntersectionDetector for consistency
-            filtered_points = [(x + 7, y + 10) for x, y in filtered_points]
-
+            
             return filtered_points
 
         except Exception as e:
@@ -1043,49 +994,16 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
                 weighted_y = sum(y * conf for (x, y), conf in cluster_members) / total_weight
                 avg_x, avg_y = weighted_x, weighted_y
 
-            clustered_points.append((int(round(avg_x)), int(round(avg_y))))
+            corrected_x = avg_x + self.x_correction
+            corrected_y = avg_y + self.y_correction # y_correction in config is -7 for upward shift
+            clustered_points.append((int(round(corrected_x)), int(round(corrected_y))))
+        
 
-
-        # # Original clustering logic (kept for reference)
-        # clusters = []
-        # cluster_distance = self.patch_size
-
-        # for point, conf in points_with_conf:
-        #     x, y = point
-        #     found_cluster = False
-        #     for i, cluster in enumerate(clusters):
-        #         cluster_point, _ = cluster[0] # Use first point as representative (could use centroid)
-        #         cluster_x, cluster_y = cluster_point
-        #         distance = np.sqrt((x - cluster_x)**2 + (y - cluster_y)**2)
-        #         if distance < cluster_distance:
-        #             cluster.append((point, conf))
-        #             found_cluster = True
-        #             break
-        #     if not found_cluster:
-        #         clusters.append([(point, conf)])
-
-        # clustered_points = []
-        # for cluster in clusters:
-        #     total_weight = sum(conf for _, conf in cluster)
-        #     if total_weight == 0: continue # Avoid division by zero
-        #     weighted_x = sum(x * conf for (x, y), conf in cluster) / total_weight
-        #     weighted_y = sum(y * conf for (x, y), conf in cluster) / total_weight
-        #     clustered_points.append((int(round(weighted_x)), int(round(weighted_y))))
 
         return clustered_points
 
 
     def train(self, images: List[ImageType], annotations: List[List[PointType]]) -> None:
-        """
-        Train the CNN intersection detector.
-
-        Args:
-            images: List of training images
-            annotations: List of intersection point annotations for each image
-
-        Raises:
-            IntersectionDetectionError: If training fails
-        """
         try:
             # Validate inputs
             if not images or not annotations or len(images) != len(annotations):
@@ -1181,16 +1099,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         images: List[ImageType],
         annotations: List[List[PointType]]
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Generate training data from images and annotations.
 
-        Args:
-            images: List of training images
-            annotations: List of intersection point annotations for each image
-
-        Returns:
-            Tuple of (training patches, labels)
-        """
         # List to store training samples and labels
         X = []
         y = []
