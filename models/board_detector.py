@@ -1,6 +1,6 @@
 """
 Board Detector Module.
-
+Hells Bells
 This module implements Sudoku board detection to provide bounding boxes
 for filtering intersection points and improving grid reconstruction.
 """
@@ -46,15 +46,29 @@ class BoardDetector:
         """
         try:
             if os.path.exists(model_path):
-                self.model = tf.keras.models.load_model(model_path)
-                logger.info(f"Board detection model loaded from {model_path}")
+                # Load the model without compiling it initially
+                self.model = tf.keras.models.load_model(model_path, compile=False)
+                
+                # Re-compile the model.
+                # These settings should match what was used during the model's original training
+                # In your training_notebook.ipynb, for the board detector, you used:
+                # optimizer=Adam(learning_rate=0.0005) # LEARNING_RATE was 0.0005
+                # loss='mse'
+                # metrics=['mae', 'mse']
+                
+                self.model.compile(
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005), # Use the learning rate from training
+                    loss='mse',
+                    metrics=['mae', tf.keras.metrics.MeanSquaredError(name='mse')] # Explicitly use the class for the 'mse' metric
+                )
+                logger.info(f"Board detection model loaded and re-compiled from {model_path}")
                 return True
             else:
                 logger.warning(f"Model file not found: {model_path}")
                 return False
         except Exception as e:
             logger.error(f"Error loading board detection model: {str(e)}")
-            return False
+            return False    
     
     def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """

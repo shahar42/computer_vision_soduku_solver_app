@@ -28,8 +28,8 @@ DEFAULT_CONFIG = {
         "patch_size": 15,  # Size of intersection patch in pixels
         "fallback_to_cv": True,  # Fallback to OpenCV methods if CNN fails
         "use_ensemble": True,  # Use ensemble of detection methods
-        "x_correction": -5,
-	"y_correction": -7,      
+        "x_correction": -4,
+	"y_correction": 6,      
     },
     
     # Grid reconstructor settings
