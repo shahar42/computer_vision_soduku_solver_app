@@ -813,7 +813,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         normalized = image.astype(np.float32) / 255.0
         return normalized
 
-    @robust_method(max_retries=2, timeout_sec=30.0)
+    @robust_method(max_retries=2, timeout_sec=80.0)
     def detect(self, image: ImageType) -> List[PointType]:
         """
         Detect grid line intersections using CNN.
