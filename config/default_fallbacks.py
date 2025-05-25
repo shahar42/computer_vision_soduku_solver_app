@@ -12,26 +12,26 @@ DEFAULT_CONFIG = {
         "debug_mode": False,
         "log_level": "INFO",
         "max_retries": 3,
-        "timeout_seconds": 30,
+        "timeout_seconds": 70,
         "temp_directory": "/tmp/sudoku_recognizer",
         "max_image_size": 1600,  # Max dimension in pixels
         "min_image_size": 300,   # Min dimension in pixels
     },
-    
+
     # Intersection detector settings
     "intersection_detector": {
         "model_path": "data/models/intersection_detector.h5",
-        "confidence_threshold": 0.8,
+        "confidence_threshold": 0.8, # Matches notebook
         "nms_threshold": 3,
         "min_intersections": 70,  # Minimum number of intersections to proceed
-        "detection_methods": ["cnn", "hough", "adaptive_threshold"],
-        "patch_size": 15,  # Size of intersection patch in pixels
+        "detection_methods": ["cnn", "hough", "adaptive_threshold"], # Matches notebook
+        "patch_size": 15,  # Size of intersection patch in pixels, matches notebook
         "fallback_to_cv": True,  # Fallback to OpenCV methods if CNN fails
         "use_ensemble": True,  # Use ensemble of detection methods
-        "x_correction": -4,
-	"y_correction": 6,      
+        "x_correction": -5, # Updated from -4 to match notebook
+        "y_correction": 7,  # Updated from 6 to match notebook
     },
-    
+
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1070,
@@ -43,24 +43,26 @@ DEFAULT_CONFIG = {
         "use_homography": True,
         "use_grid_refinement": True,
         "max_perspective_distortion": 45,  # Max perspective angle in degrees
-        "use_min_intersections_method": True,  # Enable new method
-        "min_points_per_line": 7,  # Minimum intersections per line
-        "reconstruction_method_order": ["min_intersections", "board_detection", "standard"],
+        "use_min_intersections_method": True,  # Matches notebook
+        "min_points_per_line": 7,  # Minimum intersections per line, matches notebook
+        "reconstruction_method_order": ["min_intersections", "board_detection", "standard"], # Matches notebook
         "grid_detection_methods": ["ransac", "hough", "contour"],
+        "use_board_aware_reconstruction": True # Added from notebook
     },
-    
+
     # Cell extractor settings
     "cell_extractor": {
-        "cell_size": 28,  # Output cell size in pixels
-        "border_padding": 0.05,  # Percentage of cell size to remove as border
-        "perspective_correction": True,
-        "contrast_enhancement": False,
-        "noise_reduction": False,
-        "adaptive_thresholding": False,
+        "cell_size": 28,  # Output cell size in pixels, matches notebook
+        "border_padding": 0.08,  # Updated from 0.05 to match notebook
+        "perspective_correction": True, # Matches notebook
+        "contrast_enhancement": False, # Matches notebook
+        "noise_reduction": False, # Matches notebook
+        "adaptive_thresholding": False, # Matches notebook
         "histogram_equalization": False,
-        "use_multiple_extractors": False,  # Try different extraction methods
+        "use_multiple_extractors": False,  # Try different extraction methods, matches notebook
+        "extraction_mode": "preserve" # Added from notebook
     },
-    
+
     # Digit recognizer settings
     "digit_recognizer": {
         "model_path": "data/models/digit_recognizer.h5",
@@ -73,7 +75,7 @@ DEFAULT_CONFIG = {
         "digit_height_min_ratio": 0.3,  # Minimum height ratio relative to cell
         "digit_width_min_ratio": 0.1,  # Minimum width ratio relative to cell
     },
-    
+
     # Sudoku solver settings
     "solver": {
         "use_constraint_propagation": True,
@@ -83,7 +85,14 @@ DEFAULT_CONFIG = {
         "validate_solution": True,
         "fallback_to_simpler_solver": True,
     },
-    
+
+    # Board Detector (New section from notebook)
+    "board_detector": {
+        "confidence_threshold": 0.5,
+        "model_input_size": 416,
+        "diagonal_margin_factor": 14
+    },
+
     # Pipeline settings
     "pipeline": {
         "save_intermediates": False,
@@ -97,21 +106,25 @@ DEFAULT_CONFIG = {
             "cell_extraction_failed": ["refine_grid", "adjust_cell_boundaries"],
             "digit_recognition_failed": ["enhance_contrast", "try_alternative_model"],
             "solving_failed": ["validate_digits", "relax_constraints"]
-        }
+        },
+        "use_board_detection": True, # Added from notebook
+        "min_filtered_intersections": 78, # Added from notebook
+        "grid_separation_enabled": True, # Added from notebook
+        "min_grid_size": 40 # Added from notebook
     },
-    
+
     # Training settings
     "training": {
         "batch_size": 32,
         "epochs": 100,
         "validation_split": 0.2,
-        "learning_rate": 0.001,
+        "learning_rate": 0.0007,
         "early_stopping_patience": 10,
         "data_augmentation": True,
         "use_transfer_learning": True,
         "save_best_only": True,
     },
-    
+
     # Evaluation settings
     "evaluation": {
         "test_split": 0.18,
@@ -119,7 +132,7 @@ DEFAULT_CONFIG = {
         "confusion_matrix": True,
         "save_error_examples": True,
     },
-    
+
     # Web application settings
     "web_app": {
         "host": "0.0.0.0",
