@@ -8,18 +8,23 @@ approaches with robust error handling and fallback mechanisms.
 import os
 import numpy as np
 import cv2
+from tensorflow.keras.optimizers import Adam
 import pickle
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
-
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.layers import Multiply
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model, load_model
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
+from tensorflow.keras.layers import (
+    Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Input,
+    BatchNormalization, ReLU, Add, GlobalAveragePooling2D, Reshape
+)
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-
+from tensorflow.keras import backend as K
 from . import DigitRecognizerBase
 from config.settings import get_settings
 from utils.error_handling import (
