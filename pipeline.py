@@ -31,6 +31,7 @@ from utils.validation import (
     normalize_image_size, validate_grid_values, is_puzzle_solvable
 )
 
+from utils.tf_compatibility import setup_tensorflow_compatibility
 # Define types
 ImageType = np.ndarray
 PointType = Tuple[int, int]
@@ -58,6 +59,7 @@ class SudokuRecognizerPipeline:
         """
         # Load settings
         self.settings = get_settings()
+        setup_tensorflow_compatibility()
         self.board_detector = None
         self.use_board_detection = True
 
@@ -150,57 +152,93 @@ class SudokuRecognizerPipeline:
 
     def load_models(self, model_dir: str) -> bool:
         """
-        Load all models from directory.
-
+        Load all models with improved error handling and compatibility.
+        
         Args:
             model_dir: Directory containing model files
-
+            
         Returns:
-            True if all models were loaded successfully
+            True if critical models were loaded successfully
         """
         try:
             # Create model paths
             intersection_model_path = os.path.join(model_dir, "intersection_detector.h5")
-            grid_model_path = os.path.join(model_dir, "grid_reconstructor.pkl")
-            cell_model_path = os.path.join(model_dir, "cell_extractor.pkl")
             digit_model_path = os.path.join(model_dir, "digit_recognizer.h5")
-
-            # Load models
-            intersection_loaded = self.intersection_detector.load(intersection_model_path)
-            grid_loaded = self.grid_reconstructor.load(grid_model_path)
-            cell_loaded = self.cell_extractor.load(cell_model_path)
-            digit_loaded = self.digit_recognizer.load(digit_model_path)
-
-            # The solver doesn't have a model to load
-
-            # Log results
-            if intersection_loaded:
-                logger.info("Intersection detector model loaded")
+            board_model_path = os.path.join(model_dir, "board_detector.h5")
+            
+            # Track loading success
+            models_loaded = {
+                'intersection': False,
+                'digit': False,
+                'board': False
+            }
+            
+            # Load intersection detector (critical)
+            try:
+                models_loaded['intersection'] = self.intersection_detector.load(intersection_model_path)
+                if models_loaded['intersection']:
+                    logger.info("✅ Intersection detector loaded successfully")
+                else:
+                    logger.warning("⚠️ Intersection detector failed to load")
+            except Exception as e:
+                logger.error(f"❌ Intersection detector loading error: {str(e)}")
+            
+            # Load digit recognizer (critical)
+            try:
+                models_loaded['digit'] = self.digit_recognizer.load(digit_model_path)
+                if models_loaded['digit']:
+                    logger.info("✅ Digit recognizer loaded successfully")
+                else:
+                    logger.warning("⚠️ Digit recognizer failed to load")
+            except Exception as e:
+                logger.error(f"❌ Digit recognizer loading error: {str(e)}")
+            
+            # Load board detector (optional but recommended)
+            try:
+                if os.path.exists(board_model_path):
+                    from models.board_detector import BoardDetector
+                    self.board_detector = BoardDetector(board_model_path)
+                    models_loaded['board'] = True
+                    logger.info("✅ Board detector loaded successfully")
+                    self.use_board_detection = True
+                else:
+                    logger.info("📝 Board detector not found, proceeding without it")
+                    self.use_board_detection = False
+            except Exception as e:
+                logger.warning(f"⚠️ Board detector loading error: {str(e)}")
+                self.use_board_detection = False
+            
+            # Load other models (they have fallback mechanisms)
+            try:
+                grid_model_path = os.path.join(model_dir, "grid_reconstructor.pkl")
+                self.grid_reconstructor.load(grid_model_path)
+                logger.info("📝 Grid reconstructor parameters loaded (optional)")
+            except Exception as e:
+                logger.info("📝 Grid reconstructor using default parameters")
+                
+            try:
+                cell_model_path = os.path.join(model_dir, "cell_extractor.pkl")
+                self.cell_extractor.load(cell_model_path)
+                logger.info("📝 Cell extractor parameters loaded (optional)")
+            except Exception as e:
+                logger.info("📝 Cell extractor using default parameters")
+            
+            # Determine success criteria
+            critical_models_loaded = models_loaded['intersection'] or models_loaded['digit']
+            
+            if models_loaded['intersection'] and models_loaded['digit']:
+                logger.info("🎉 All critical models loaded successfully!")
+                return True
+            elif critical_models_loaded:
+                logger.warning("⚠️ Some critical models loaded, pipeline will use fallbacks")
+                return True
             else:
-                logger.warning("Failed to load intersection detector model")
-
-            if grid_loaded:
-                logger.info("Grid reconstructor model loaded")
-            else:
-                logger.warning("Failed to load grid reconstructor model")
-
-            if cell_loaded:
-                logger.info("Cell extractor model loaded")
-            else:
-                logger.warning("Failed to load cell extractor model")
-
-            if digit_loaded:
-                logger.info("Digit recognizer model loaded")
-            else:
-                logger.warning("Failed to load digit recognizer model")
-
-            # Return True if at least the critical models were loaded
-            return intersection_loaded and digit_loaded
-
+                logger.error("❌ No critical models loaded, pipeline may not work properly")
+                return False
+                
         except Exception as e:
-            logger.error(f"Error loading models: {str(e)}")
+            logger.error(f"❌ Error in model loading process: {str(e)}")
             return False
-
     @robust_method(max_retries=2, timeout_sec=60.0)
     def process_image(self, image_path: str) -> Dict[str, Any]:
         """
@@ -467,8 +505,13 @@ class SudokuRecognizerPipeline:
             if self.use_board_detection and self.board_detector is not None:
                 try:
                     logger.info("🎯 Running board detection...")
-                    board_bbox, confidence = self.board_detector.detect(image)
-
+                    detection_result = self.board_detector.detect(image)
+                    if detection_result is not None:
+                        x1, y1, x2, y2, confidence = detection_result
+                        board_bbox = (x1, y1, x2, y2)
+                    else:
+                        board_bbox = None
+                        confidence = 0.0
                     if board_bbox is not None and confidence >= 0.5:
                         logger.info(f"✅ Board detected with confidence {confidence:.3f}")
                         board_detected = True

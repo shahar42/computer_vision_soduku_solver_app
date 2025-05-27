@@ -11,6 +11,7 @@ import sys
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from utils.tf_compatibility import setup_tensorflow_compatibility
 
 # Add current directory to path
 sys.path.append('.')
@@ -163,7 +164,7 @@ def main():
     print("🧪 FULL PIPELINE TEST")
     print(f"Testing complete Sudoku recognition pipeline")
     print("=" * 50)
-    
+    setup_tensorflow_compatibility()	    
     # Find test image
     test_image = find_test_image()
     

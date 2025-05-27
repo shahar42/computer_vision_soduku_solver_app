@@ -27,6 +27,8 @@ from utils.validation import (
     validate_image, is_valid_intersection_point, normalize_image_size
 )
 
+from utils.tf_compatibility import load_model_with_tf_compatibility
+
 # Define types
 ImageType = np.ndarray
 PointType = Tuple[int, int]
@@ -58,7 +60,6 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         self.cluster_distance = 10
 
     def load(self, model_path: str) -> bool:
-
         try:
             if os.path.exists(model_path):
                 with open(model_path, 'rb') as f:
@@ -78,7 +79,6 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         except Exception as e:
             logger.error(f"Error loading CV intersection detector parameters: {str(e)}")
             return False
-
     def save(self, model_path: str) -> bool:
 
         try:
@@ -751,31 +751,31 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
 
     def load(self, model_path: str) -> bool:
         """
-        Load model from file.
-
+        Load model with TensorFlow compatibility for CNN intersection detector.
+        
         Args:
-            model_path: Path to model file
-
+            model_path: Path to model file (.h5)
+            
         Returns:
             True if successful
         """
         try:
             if os.path.exists(model_path):
-                self.model = safe_execute(
-                    load_model,
-                    model_path,
-                    error_msg=f"Failed to load CNN intersection detector from {model_path}"
-                )
+                # Use compatibility loading function with correct input shape for intersection detector
+                self.model = load_model_with_tf_compatibility(model_path, (32, 32, 1))
+                
+                # Ensure input shape is set correctly
+                self.input_shape = (32, 32, 1)
+                self.patch_size = self.settings.get("patch_size", 15)
+                
                 logger.info(f"Loaded CNN intersection detector from {model_path}")
                 return True
             else:
                 logger.warning(f"Model file {model_path} not found")
                 return False
-
         except Exception as e:
             logger.error(f"Error loading CNN intersection detector: {str(e)}")
             return False
-
     def save(self, model_path: str) -> bool:
         """
         Save model to file.

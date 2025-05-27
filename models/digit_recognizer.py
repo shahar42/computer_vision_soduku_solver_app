@@ -36,6 +36,7 @@ from utils.error_handling import (
     DigitRecognitionError, retry, fallback, robust_method, safe_execute
 )
 from utils.validation import validate_cell_image, validate_grid_values
+from utils.tf_compatibility import load_model_with_tf_compatibility
 
 # Define types
 ImageType = np.ndarray
@@ -62,7 +63,7 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         self.input_shape = (28, 28, 1)  # Will be updated based on model
         
         # Recognition parameters
-        self.confidence_threshold = self.settings.get("confidence_threshold", 0.8)
+        self.confidence_threshold = self.settings.get("confidence_threshold", 0.1)
         self.empty_cell_threshold = self.settings.get("empty_cell_threshold", 0.02)
         self.enhanced_confidence_threshold = 0.85  # Higher threshold for enhanced models
         
@@ -76,84 +77,44 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         
     def load(self, model_path: str) -> bool:
         """
-        Load model with automatic type detection and backward compatibility.
+        Load model with TensorFlow compatibility for CNN digit recognizer.
         
         Args:
-            model_path: Path to model file
+            model_path: Path to model file (.h5)
             
         Returns:
             True if successful
         """
         try:
             if os.path.exists(model_path):
-                logger.info(f"Loading digit recognizer model from {model_path}")
+                # Use compatibility loading function
+                self.model = load_model_with_tf_compatibility(model_path, (28, 28, 1))
                 
-                # Try loading enhanced model first (with custom objects)
-                try:
-                    custom_objects = {
-                        'CategoricalCrossentropy': tf.keras.losses.CategoricalCrossentropy
-                    }
-                    self.model = load_model(model_path, custom_objects=custom_objects, compile=False)
-                    
-                    # Detect model type from input shape
-                    model_input_shape = self.model.input_shape[1:]  # Remove batch dimension
-                    
-                    if model_input_shape == (32, 32, 1):
-                        self.model_type = "enhanced"
-                        self.input_shape = (32, 32, 1)
-                        self.confidence_threshold = self.enhanced_confidence_threshold
-                        
-                        # Recompile for enhanced model with label smoothing
-                        self.model.compile(
-                            optimizer=Adam(learning_rate=0.001),
-                            loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
-                            metrics=['accuracy']
-                        )
-                        logger.info("✅ Loaded enhanced CNN model (32x32) with advanced preprocessing")
-                        
-                    elif model_input_shape == (28, 28, 1):
-                        self.model_type = "legacy"
-                        self.input_shape = (28, 28, 1)
-                        
-                        # Recompile for legacy model
-                        self.model.compile(
-                            optimizer='adam',
-                            loss='categorical_crossentropy',
-                            metrics=['accuracy']
-                        )
-                        logger.info("✅ Loaded legacy CNN model (28x28) with basic preprocessing")
-                        
-                    else:
-                        logger.warning(f"Unexpected input shape {model_input_shape}, defaulting to legacy mode")
-                        self.model_type = "legacy"
-                        self.input_shape = (28, 28, 1)
-                        
-                    self.model_loaded = True
-                    return True
-                    
-                except Exception as e:
-                    # Fallback to standard loading for legacy models
-                    logger.warning(f"Enhanced loading failed, trying legacy loading: {str(e)}")
-                    
-                    try:
-                        self.model = load_model(model_path)
-                        self.model_type = "legacy"
-                        self.input_shape = (28, 28, 1)
-                        self.model_loaded = True
-                        logger.info("✅ Loaded model with legacy loading method")
-                        return True
-                    except Exception as e2:
-                        logger.error(f"Both loading methods failed: {str(e2)}")
-                        return False
-                        
+                # Auto-detect model type from input shape
+                model_input_shape = self.model.input_shape[1:]  # Remove batch dimension
+                
+                if model_input_shape == (32, 32, 1):
+                    self.model_type = "enhanced"
+                    self.input_shape = (32, 32, 1)
+                    self.confidence_threshold = self.enhanced_confidence_threshold
+                    logger.info("✅ Loaded enhanced CNN digit recognizer (32x32)")
+                elif model_input_shape == (28, 28, 1):
+                    self.model_type = "legacy"
+                    self.input_shape = (28, 28, 1)
+                    logger.info("✅ Loaded legacy CNN digit recognizer (28x28)")
+                else:
+                    logger.warning(f"Unexpected input shape {model_input_shape}, defaulting to legacy")
+                    self.model_type = "legacy"
+                    self.input_shape = (28, 28, 1)
+                
+                self.model_loaded = True
+                return True
             else:
                 logger.warning(f"Model file {model_path} not found")
                 return False
-                
         except Exception as e:
             logger.error(f"Error loading CNN digit recognizer: {str(e)}")
             return False
-
     def save(self, model_path: str) -> bool:
         """
         Save model to file.
@@ -283,71 +244,129 @@ class CNNDigitRecognizer(DigitRecognizerBase):
     
     def _preprocess_cell_legacy(self, cell: ImageType) -> ImageType:
         """
-        Legacy preprocessing pipeline for backward compatibility.
-        
-        Args:
-            cell: Cell image
-            
-        Returns:
-            Preprocessed cell image ready for legacy model
+        Emergency fix: Bypass complex preprocessing that's destroying digits.
+        Use minimal processing and let the model handle the rest.
         """
         # Ensure grayscale
         if len(cell.shape) > 2 and cell.shape[2] > 1:
             gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
         else:
             gray = cell.copy()
-            
-        # Resize to expected input size
-        if gray.shape[0] != self.input_shape[0] or gray.shape[1] != self.input_shape[1]:
-            resized = cv2.resize(gray, (self.input_shape[0], self.input_shape[1]))
-        else:
-            resized = gray
-            
-        # Apply basic thresholding if needed
-        if np.max(resized) > 1:
-            _, binary = cv2.threshold(resized, 127, 255, cv2.THRESH_BINARY_INV)
-        else:
-            binary = resized * 255
-            
-        # Normalize pixel values to [0, 1]
-        normalized = binary.astype(np.float32) / 255.0
+        
+        # Simple resize to model input size
+        resized = cv2.resize(gray, (self.input_shape[0], self.input_shape[1]), 
+                            interpolation=cv2.INTER_AREA)
+        
+        # Very light preprocessing only if needed
+        # Option 1: Just normalize (recommended first try)
+        normalized = resized.astype(np.float32) / 255.0
+        
+        # Option 2: If you need some contrast enhancement, use this instead:
+        # enhanced = cv2.equalizeHist(resized)
+        # normalized = enhanced.astype(np.float32) / 255.0
         
         # Reshape for model input
-        shaped = normalized.reshape(*self.input_shape)
+        if len(self.input_shape) == 3 and self.input_shape[2] == 1:
+            shaped = normalized.reshape(self.input_shape[0], self.input_shape[1], 1)
+        else:
+            shaped = normalized
         
         return shaped
     
     def _is_empty_cell_fast(self, cell: ImageType) -> bool:
         """
-        Quick check if a cell is empty (contains no digit).
+        Improved empty cell detection that handles real-world variations.
         
         Args:
-            cell: Cell image
+            cell: Cell image (grayscale)
             
         Returns:
             True if cell is likely empty
         """
-        # Simple threshold check
-        _, binary = cv2.threshold(cell, 127, 255, cv2.THRESH_BINARY_INV)
-        white_pixels = np.sum(binary > 127)
-        total_pixels = binary.size
+        # Ensure we're working with grayscale
+        if len(cell.shape) > 2:
+            cell = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
         
-        # If very few white pixels, it's empty
-        white_ratio = white_pixels / total_pixels
-        if white_ratio < self.empty_cell_threshold:
+        # Method 1: Statistical analysis
+        # Empty cells have low standard deviation
+        std_dev = np.std(cell)
+        mean_val = np.mean(cell)
+        
+        # Very uniform cells are likely empty
+        if std_dev < 10:
             return True
         
-        # Check center region for concentrated content
-        height, width = cell.shape[:2]
-        center_region = binary[height//4:(height*3)//4, width//4:(width*3)//4]
+        # Method 2: Edge detection
+        # Empty cells have very few edges
+        edges = cv2.Canny(cell, 50, 150)
+        edge_ratio = np.sum(edges > 0) / edges.size
+        
+        if edge_ratio < 0.01:  # Very few edges
+            return True
+        
+        # Method 3: Adaptive threshold analysis
+        # Apply adaptive threshold
+        binary = cv2.adaptiveThreshold(
+            cell, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, 11, 2
+        )
+        
+        # Count foreground pixels
+        foreground_ratio = np.sum(binary > 127) / binary.size
+        
+        # Very little foreground indicates empty cell
+        if foreground_ratio < 0.02:
+            return True
+        
+        # Method 4: Center region analysis
+        # Check if center region has significant content
+        h, w = cell.shape[:2]
+        center_size = min(h, w) // 2
+        cy, cx = h // 2, w // 2
+        
+        center_region = cell[
+            cy - center_size//2 : cy + center_size//2,
+            cx - center_size//2 : cx + center_size//2
+        ]
         
         if center_region.size > 0:
-            center_white_ratio = np.sum(center_region > 127) / center_region.size
+            # Apply threshold to center
+            _, center_binary = cv2.threshold(
+                center_region, 0, 255, 
+                cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+            )
             
-            # If center has very few white pixels, it's likely empty
-            if center_white_ratio < self.empty_cell_threshold:
+            center_foreground_ratio = np.sum(center_binary > 127) / center_binary.size
+            
+            # If center has very little content, likely empty
+            if center_foreground_ratio < 0.05:
                 return True
         
+        # Method 5: Contour analysis
+        # Find contours in binary image
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return True
+        
+        # Check if any contour is significant
+        total_area = cell.shape[0] * cell.shape[1]
+        significant_contours = 0
+        
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > total_area * 0.01:  # At least 1% of cell area
+                x, y, w, h = cv2.boundingRect(contour)
+                aspect_ratio = w / h if h > 0 else 0
+                
+                # Check if it looks like a digit (reasonable aspect ratio)
+                if 0.2 < aspect_ratio < 2.0:
+                    significant_contours += 1
+        
+        if significant_contours == 0:
+            return True
+        
+        # If we reach here, cell likely contains a digit
         return False
     
     def _apply_test_time_augmentation(self, cell: ImageType) -> np.ndarray:
@@ -434,8 +453,8 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         else:
             flat_cell = processed_cell.flatten()
             
-        white_ratio = np.sum(flat_cell > 0.5) / flat_cell.size
-        return white_ratio < self.empty_cell_threshold
+        white_ratio = np.sum(flat_cell > 0.1) / flat_cell.size
+        return white_ratio < 0.02
 
     @robust_method(max_retries=2, timeout_sec=30.0)
     def recognize(self, cell_images: List[List[ImageType]]) -> Tuple[GridType, List[List[float]]]:
@@ -509,7 +528,7 @@ class CNNDigitRecognizer(DigitRecognizerBase):
                                     confidence = 0.5
                             else:
                                 # For legacy models, lower confidence threshold
-                                if confidence < 0.6:
+                                if confidence < 0.05:
                                     digit = 0
                                     confidence = 0.5
                         

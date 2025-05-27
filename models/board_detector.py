@@ -11,7 +11,7 @@ import numpy as np
 import tensorflow as tf
 import logging
 from typing import Tuple, Optional
-
+from utils.tf_compatibility import load_model_with_tf_compatibility
 logger = logging.getLogger(__name__)
 
 class BoardDetector:
@@ -36,7 +36,7 @@ class BoardDetector:
     
     def load_model(self, model_path: str) -> bool:
         """
-        Load the board detection model.
+        Load the board detection model with TensorFlow compatibility.
         
         Args:
             model_path: Path to .h5 model file
@@ -46,21 +46,16 @@ class BoardDetector:
         """
         try:
             if os.path.exists(model_path):
-                # Load the model without compiling it initially
-                self.model = tf.keras.models.load_model(model_path, compile=False)
+                # Use compatibility loading function with correct input shape for board detector
+                self.model = load_model_with_tf_compatibility(model_path, (416, 416, 3))
                 
-                # Re-compile the model.
-                # These settings should match what was used during the model's original training
-                # In your training_notebook.ipynb, for the board detector, you used:
-                # optimizer=Adam(learning_rate=0.0005) # LEARNING_RATE was 0.0005
-                # loss='mse'
-                # metrics=['mae', 'mse']
-                
+                # Re-compile the model with proper settings
                 self.model.compile(
-                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005), # Use the learning rate from training
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
                     loss='mse',
-                    metrics=['mae', tf.keras.metrics.MeanSquaredError(name='mse')] # Explicitly use the class for the 'mse' metric
+                    metrics=['mae', tf.keras.metrics.MeanSquaredError(name='mse')]
                 )
+                
                 logger.info(f"Board detection model loaded and re-compiled from {model_path}")
                 return True
             else:
@@ -68,7 +63,7 @@ class BoardDetector:
                 return False
         except Exception as e:
             logger.error(f"Error loading board detection model: {str(e)}")
-            return False    
+            return False
     
     def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
         """
