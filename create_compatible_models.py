@@ -121,7 +121,7 @@ def main():
     models_info = [
         ("Board Detector", create_board_detector, "board_detector_converted.h5", (416, 416, 3)),
         ("Intersection Detector", create_intersection_detector, "intersection_detector.h5", (32, 32, 1)),
-        ("Digit Recognizer", create_digit_recognizer, "digit_detector_augmented_v2.h5", (28, 28, 1))
+        ("Digit Recognizer", create_digit_recognizer, "digit_recognizer.h5", (28, 28, 1))
     ]
     
     created_models = []

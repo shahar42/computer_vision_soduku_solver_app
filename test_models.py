@@ -23,7 +23,7 @@ def test_model_loading():
     models = {
         'Board Detector': 'data/models/board_detector_converted.h5',
         'Intersection Detector': 'data/models/intersection_detector.h5', 
-        'Digit Recognizer': 'data/models/digit_detector_augmented_v2.h5'
+        'Digit Recognizer': 'data/models/digit_recognizer.h5'
     }
     
     results = {}

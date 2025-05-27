@@ -1,30 +1,35 @@
 """
-Digit Recognizer Module.
+Enhanced Digit Recognizer Module.
 
 This module implements digit recognition for Sudoku puzzles using multiple
 approaches with robust error handling and fallback mechanisms.
+Includes enhanced CNN with adaptive preprocessing for killer beast models.
 """
 
 import os
 import numpy as np
 import cv2
-from tensorflow.keras.optimizers import Adam
 import pickle
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras.layers import Multiply
+
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.layers import (
-    Conv2D, MaxPooling2D, Dropout, Flatten, Dense, Input,
-    BatchNormalization, ReLU, Add, GlobalAveragePooling2D, Reshape
+    Conv2D, MaxPooling2D, Dense, Flatten, Dropout,
+    BatchNormalization, Activation, Input, Add,
+    GlobalAveragePooling2D, Multiply, Reshape,
+    LayerNormalization, SeparableConv2D
 )
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, LearningRateScheduler
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.regularizers import l2
+import tensorflow.keras.backend as K
+from tensorflow.keras.optimizers import Adam
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras import backend as K
+
 from . import DigitRecognizerBase
 from config.settings import get_settings
 from utils.error_handling import (
@@ -42,269 +47,36 @@ logger = logging.getLogger(__name__)
 
 class CNNDigitRecognizer(DigitRecognizerBase):
     """
-    Enhanced CNN-based digit recognizer with ResNet architecture and modern techniques.
+    Enhanced CNN-based digit recognizer with adaptive preprocessing.
     
-    This class implements digit recognition using a deep convolutional neural network
-    with skip connections, SE blocks, and advanced training strategies optimized
-    for printed digit recognition.
+    This class automatically detects model type (28x28 legacy or 32x32 enhanced)
+    and applies appropriate preprocessing pipeline for maximum compatibility.
     """
     
     def __init__(self):
         """Initialize enhanced CNN digit recognizer with default parameters."""
         self.settings = get_settings().get_nested("digit_recognizer")
         
+        # Model detection and configuration
+        self.model_type = "legacy"  # Will be auto-detected on load
+        self.input_shape = (28, 28, 1)  # Will be updated based on model
+        
         # Recognition parameters
         self.confidence_threshold = self.settings.get("confidence_threshold", 0.8)
-        self.empty_cell_threshold = self.settings.get("empty_cell_threshold", 0.95)
-        self.augment_at_runtime = self.settings.get("augment_at_runtime", True)
+        self.empty_cell_threshold = self.settings.get("empty_cell_threshold", 0.02)
+        self.enhanced_confidence_threshold = 0.85  # Higher threshold for enhanced models
         
-        # Model parameters
-        self.input_shape = (28, 28, 1)
-        self.num_classes = 10
-        
-        # Training parameters
-        self.use_mixup = self.settings.get("use_mixup", True)
-        self.mixup_alpha = self.settings.get("mixup_alpha", 0.2)
-        self.label_smoothing = self.settings.get("label_smoothing", 0.1)
-        self.weight_decay = self.settings.get("weight_decay", 1e-4)
-        
-        # Build model
-        self.model = self._build_model()
+        # Model state
+        self.model = None
         self.model_loaded = False
         
-    def _build_model(self) -> Model:
-        """
-        Build enhanced CNN model with ResNet-style architecture and SE blocks.
+        # Enhanced model features
+        self.use_tta = self.settings.get("use_test_time_augmentation", True)
+        self.tta_variations = 5  # Number of augmentation variations for TTA
         
-        Returns:
-            Keras Model for digit recognition
-        """
-        inputs = Input(shape=self.input_shape)
-        
-        # Initial convolution block
-        x = Conv2D(32, (3, 3), padding='same', kernel_regularizer=l2(self.weight_decay))(inputs)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        
-        # Residual blocks with increasing filters
-        x = self._residual_block(x, 32, stride=1, use_se=True)
-        x = self._residual_block(x, 64, stride=2, use_se=True)  # Downsample to 14x14
-        x = self._residual_block(x, 128, stride=2, use_se=True)  # Downsample to 7x7
-        x = self._residual_block(x, 256, stride=1, use_se=True)  # Keep 7x7
-        
-        # Global average pooling instead of flatten
-        x = GlobalAveragePooling2D()(x)
-        
-        # Dense layers with dropout
-        x = Dense(256, kernel_regularizer=l2(self.weight_decay))(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        x = Dropout(0.5)(x)
-        
-        x = Dense(128, kernel_regularizer=l2(self.weight_decay))(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        x = Dropout(0.3)(x)
-        
-        # Output layer with label smoothing
-        outputs = Dense(self.num_classes, activation='softmax', 
-                       kernel_regularizer=l2(self.weight_decay))(x)
-        
-        # Create model
-        model = Model(inputs=inputs, outputs=outputs, name='EnhancedCNNDigitRecognizer')
-        
-        # Compile with label smoothing loss
-        model.compile(
-            optimizer=Adam(learning_rate=0.001),
-            loss=self._label_smoothing_loss,
-            metrics=['accuracy', self._top_2_accuracy]
-        )
-        
-        return model
-    
-    def _residual_block(self, x: tf.Tensor, filters: int, stride: int = 1, 
-                       use_se: bool = True) -> tf.Tensor:
-        """
-        Create a residual block with optional SE attention.
-        
-        Args:
-            x: Input tensor
-            filters: Number of filters
-            stride: Stride for first convolution
-            use_se: Whether to use SE block
-            
-        Returns:
-            Output tensor
-        """
-        # Save input for skip connection
-        shortcut = x
-        
-        # First convolution
-        x = Conv2D(filters, (3, 3), strides=stride, padding='same',
-                  kernel_regularizer=l2(self.weight_decay))(x)
-        x = BatchNormalization()(x)
-        x = ReLU()(x)
-        
-        # Second convolution
-        x = Conv2D(filters, (3, 3), padding='same',
-                  kernel_regularizer=l2(self.weight_decay))(x)
-        x = BatchNormalization()(x)
-        
-        # SE block
-        if use_se:
-            x = self._se_block(x, filters)
-        
-        # Adjust shortcut if dimensions changed
-        if stride != 1 or K.int_shape(shortcut)[-1] != filters:
-            shortcut = Conv2D(filters, (1, 1), strides=stride, padding='same',
-                            kernel_regularizer=l2(self.weight_decay))(shortcut)
-            shortcut = BatchNormalization()(shortcut)
-        
-        # Add skip connection
-        x = Add()([x, shortcut])
-        x = ReLU()(x)
-        
-        return x
-    
-    def _se_block(self, x: tf.Tensor, filters: int, ratio: int = 16) -> tf.Tensor:
-        """
-        Squeeze-and-Excitation block for channel attention.
-        
-        Args:
-            x: Input tensor
-            filters: Number of filters
-            ratio: Reduction ratio
-            
-        Returns:
-            Output tensor with channel attention applied
-        """
-        # Squeeze: Global average pooling
-        se = GlobalAveragePooling2D()(x)
-        
-        # Excitation: FC -> ReLU -> FC -> Sigmoid
-        se = Dense(filters // ratio, activation='relu',
-                  kernel_regularizer=l2(self.weight_decay))(se)
-        se = Dense(filters, activation='sigmoid',
-                  kernel_regularizer=l2(self.weight_decay))(se)
-        
-        # Reshape for multiplication
-        se = Reshape((1, 1, filters))(se)
-        
-        # Scale the input
-        return Multiply()([x, se])
-    
-    def _label_smoothing_loss(self, y_true, y_pred):
-        """
-        Cross-entropy loss with label smoothing.
-        
-        Args:
-            y_true: True labels (one-hot)
-            y_pred: Predicted probabilities
-            
-        Returns:
-            Loss value
-        """
-        # Apply label smoothing
-        num_classes = K.int_shape(y_pred)[-1]
-        epsilon = self.label_smoothing
-        
-        # Smooth the labels
-        y_true_smooth = y_true * (1 - epsilon) + epsilon / num_classes
-        
-        # Calculate cross-entropy
-        return -K.sum(y_true_smooth * K.log(y_pred + K.epsilon()), axis=-1)
-    
-    def _top_2_accuracy(self, y_true, y_pred):
-        """
-        Top-2 accuracy metric (useful for debugging).
-        
-        Args:
-            y_true: True labels
-            y_pred: Predicted probabilities
-            
-        Returns:
-            Top-2 accuracy
-        """
-        return tf.keras.metrics.sparse_top_k_categorical_accuracy(
-            tf.argmax(y_true, axis=-1), y_pred, k=2
-        )
-    
-    def _cosine_annealing_schedule(self, epoch: int, lr: float) -> float:
-        """
-        Cosine annealing learning rate schedule.
-        
-        Args:
-            epoch: Current epoch
-            lr: Current learning rate
-            
-        Returns:
-            New learning rate
-        """
-        initial_lr = 0.001
-        min_lr = 1e-6
-        epochs_per_cycle = 30
-        
-        # Calculate position in current cycle
-        cycle_position = epoch % epochs_per_cycle
-        
-        # Cosine annealing
-        lr = min_lr + (initial_lr - min_lr) * 0.5 * (
-            1 + np.cos(np.pi * cycle_position / epochs_per_cycle)
-        )
-        
-        return lr
-    
-    def _create_augmentation_generator(self) -> ImageDataGenerator:
-        """
-        Create data augmentation generator optimized for printed digits.
-        
-        Returns:
-            Configured ImageDataGenerator
-        """
-        return ImageDataGenerator(
-            rotation_range=10,          # Printed digits can be slightly rotated
-            width_shift_range=0.1,      # Small shifts
-            height_shift_range=0.1,
-            shear_range=5,              # Minimal shear for printed digits
-            zoom_range=0.15,            # Allow some zoom variation
-            brightness_range=[0.8, 1.2], # Lighting variations
-            fill_mode='constant',
-            cval=0,                     # Fill with black
-            horizontal_flip=False,      # Digits shouldn't be flipped
-            vertical_flip=False,
-            validation_split=0.2
-        )
-    
-    def _mixup_batch(self, x: np.ndarray, y: np.ndarray, 
-                     alpha: float = 0.2) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Apply mixup augmentation to a batch.
-        
-        Args:
-            x: Input images
-            y: One-hot encoded labels
-            alpha: Mixup parameter
-            
-        Returns:
-            Mixed images and labels
-        """
-        batch_size = len(x)
-        
-        # Random lambda value
-        lam = np.random.beta(alpha, alpha)
-        
-        # Random permutation
-        indices = np.random.permutation(batch_size)
-        
-        # Mix inputs and labels
-        mixed_x = lam * x + (1 - lam) * x[indices]
-        mixed_y = lam * y + (1 - lam) * y[indices]
-        
-        return mixed_x, mixed_y
-    
     def load(self, model_path: str) -> bool:
         """
-        Load model from file with backward compatibility.
+        Load model with automatic type detection and backward compatibility.
         
         Args:
             model_path: Path to model file
@@ -314,36 +86,74 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         """
         try:
             if os.path.exists(model_path):
-                # Try to load the model
-                try:
-                    # First try loading with custom objects
-                    custom_objects = {
-                        '_label_smoothing_loss': self._label_smoothing_loss,
-                        '_top_2_accuracy': self._top_2_accuracy
-                    }
-                    self.model = load_model(model_path, custom_objects=custom_objects)
-                except:
-                    # Fallback: load without custom objects and recompile
-                    self.model = load_model(model_path, compile=False)
-                    self.model.compile(
-                        optimizer=Adam(learning_rate=0.001),
-                        loss=self._label_smoothing_loss,
-                        metrics=['accuracy', self._top_2_accuracy]
-                    )
+                logger.info(f"Loading digit recognizer model from {model_path}")
                 
-                logger.info(f"Loaded CNN digit recognizer from {model_path}")
-                self.model_loaded = True
-                return True
+                # Try loading enhanced model first (with custom objects)
+                try:
+                    custom_objects = {
+                        'CategoricalCrossentropy': tf.keras.losses.CategoricalCrossentropy
+                    }
+                    self.model = load_model(model_path, custom_objects=custom_objects, compile=False)
+                    
+                    # Detect model type from input shape
+                    model_input_shape = self.model.input_shape[1:]  # Remove batch dimension
+                    
+                    if model_input_shape == (32, 32, 1):
+                        self.model_type = "enhanced"
+                        self.input_shape = (32, 32, 1)
+                        self.confidence_threshold = self.enhanced_confidence_threshold
+                        
+                        # Recompile for enhanced model with label smoothing
+                        self.model.compile(
+                            optimizer=Adam(learning_rate=0.001),
+                            loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+                            metrics=['accuracy']
+                        )
+                        logger.info("✅ Loaded enhanced CNN model (32x32) with advanced preprocessing")
+                        
+                    elif model_input_shape == (28, 28, 1):
+                        self.model_type = "legacy"
+                        self.input_shape = (28, 28, 1)
+                        
+                        # Recompile for legacy model
+                        self.model.compile(
+                            optimizer='adam',
+                            loss='categorical_crossentropy',
+                            metrics=['accuracy']
+                        )
+                        logger.info("✅ Loaded legacy CNN model (28x28) with basic preprocessing")
+                        
+                    else:
+                        logger.warning(f"Unexpected input shape {model_input_shape}, defaulting to legacy mode")
+                        self.model_type = "legacy"
+                        self.input_shape = (28, 28, 1)
+                        
+                    self.model_loaded = True
+                    return True
+                    
+                except Exception as e:
+                    # Fallback to standard loading for legacy models
+                    logger.warning(f"Enhanced loading failed, trying legacy loading: {str(e)}")
+                    
+                    try:
+                        self.model = load_model(model_path)
+                        self.model_type = "legacy"
+                        self.input_shape = (28, 28, 1)
+                        self.model_loaded = True
+                        logger.info("✅ Loaded model with legacy loading method")
+                        return True
+                    except Exception as e2:
+                        logger.error(f"Both loading methods failed: {str(e2)}")
+                        return False
+                        
             else:
                 logger.warning(f"Model file {model_path} not found")
-                self.model_loaded = False
                 return False
                 
         except Exception as e:
             logger.error(f"Error loading CNN digit recognizer: {str(e)}")
-            self.model_loaded = False
             return False
-    
+
     def save(self, model_path: str) -> bool:
         """
         Save model to file.
@@ -355,36 +165,282 @@ class CNNDigitRecognizer(DigitRecognizerBase):
             True if successful
         """
         try:
+            if self.model is None:
+                logger.error("No model to save")
+                return False
+                
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
             
             # Save model
             self.model.save(model_path)
             
-            # Also save configuration
+            # Save additional configuration
             config_path = os.path.splitext(model_path)[0] + '_config.pkl'
             config = {
+                'model_type': self.model_type,
+                'input_shape': self.input_shape,
                 'confidence_threshold': self.confidence_threshold,
-                'empty_cell_threshold': self.empty_cell_threshold,
-                'label_smoothing': self.label_smoothing,
-                'mixup_alpha': self.mixup_alpha,
-                'weight_decay': self.weight_decay
+                'empty_cell_threshold': self.empty_cell_threshold
             }
             
             with open(config_path, 'wb') as f:
                 pickle.dump(config, f)
             
-            logger.info(f"Saved CNN digit recognizer to {model_path}")
+            logger.info(f"Saved {self.model_type} CNN digit recognizer to {model_path}")
             return True
             
         except Exception as e:
             logger.error(f"Error saving CNN digit recognizer: {str(e)}")
             return False
     
+    def _preprocess_cell(self, cell: ImageType) -> ImageType:
+        """
+        Adaptive preprocessing based on model type.
+        
+        Args:
+            cell: Cell image
+            
+        Returns:
+            Preprocessed cell image
+        """
+        if self.model_type == "enhanced":
+            return self._preprocess_cell_enhanced(cell)
+        else:
+            return self._preprocess_cell_legacy(cell)
+    
+    def _preprocess_cell_enhanced(self, cell: ImageType) -> ImageType:
+        """
+        Enhanced preprocessing pipeline matching killer beast training.
+        
+        Args:
+            cell: Cell image
+            
+        Returns:
+            Preprocessed cell image ready for enhanced model
+        """
+        # Ensure grayscale
+        if len(cell.shape) == 3:
+            cell = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+        
+        # Quick empty check before heavy processing
+        if self._is_empty_cell_fast(cell):
+            return np.zeros(self.input_shape, dtype=np.float32)
+        
+        # Resize to larger size for better processing
+        cell = cv2.resize(cell, (64, 64), interpolation=cv2.INTER_CUBIC)
+        
+        # Apply denoising to handle extraction artifacts
+        cell = cv2.fastNlMeansDenoising(cell, None, 10, 7, 21)
+        
+        # Enhance contrast using CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cell = clahe.apply(cell)
+        
+        # Apply morphological operations to clean up
+        kernel = np.ones((2, 2), np.uint8)
+        cell = cv2.morphologyEx(cell, cv2.MORPH_CLOSE, kernel)
+        
+        # Adaptive thresholding for better binarization
+        cell = cv2.adaptiveThreshold(cell, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                    cv2.THRESH_BINARY_INV, 11, 2)
+        
+        # Find contours and crop to digit
+        contours, _ = cv2.findContours(cell, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            # Get bounding box of all contours
+            x, y, w, h = cv2.boundingRect(np.concatenate(contours))
+            
+            # Check if it's likely a digit based on aspect ratio and size
+            aspect_ratio = w / h if h > 0 else 0
+            area_ratio = (w * h) / (cell.shape[0] * cell.shape[1])
+            
+            if 0.2 < aspect_ratio < 1.5 and area_ratio > 0.05:
+                # Add padding
+                pad = 4
+                x = max(0, x - pad)
+                y = max(0, y - pad)
+                w = min(cell.shape[1] - x, w + 2*pad)
+                h = min(cell.shape[0] - y, h + 2*pad)
+                
+                # Crop to digit
+                cell = cell[y:y+h, x:x+w]
+            else:
+                # Likely empty or noise
+                return np.zeros(self.input_shape, dtype=np.float32)
+        else:
+            # No contours found - empty cell
+            return np.zeros(self.input_shape, dtype=np.float32)
+        
+        # Final resize to model input size
+        cell = cv2.resize(cell, (self.input_shape[0], self.input_shape[1]), 
+                         interpolation=cv2.INTER_AREA)
+        
+        # Normalize to [0, 1]
+        cell = cell.astype(np.float32) / 255.0
+        
+        return cell.reshape(*self.input_shape)
+    
+    def _preprocess_cell_legacy(self, cell: ImageType) -> ImageType:
+        """
+        Legacy preprocessing pipeline for backward compatibility.
+        
+        Args:
+            cell: Cell image
+            
+        Returns:
+            Preprocessed cell image ready for legacy model
+        """
+        # Ensure grayscale
+        if len(cell.shape) > 2 and cell.shape[2] > 1:
+            gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = cell.copy()
+            
+        # Resize to expected input size
+        if gray.shape[0] != self.input_shape[0] or gray.shape[1] != self.input_shape[1]:
+            resized = cv2.resize(gray, (self.input_shape[0], self.input_shape[1]))
+        else:
+            resized = gray
+            
+        # Apply basic thresholding if needed
+        if np.max(resized) > 1:
+            _, binary = cv2.threshold(resized, 127, 255, cv2.THRESH_BINARY_INV)
+        else:
+            binary = resized * 255
+            
+        # Normalize pixel values to [0, 1]
+        normalized = binary.astype(np.float32) / 255.0
+        
+        # Reshape for model input
+        shaped = normalized.reshape(*self.input_shape)
+        
+        return shaped
+    
+    def _is_empty_cell_fast(self, cell: ImageType) -> bool:
+        """
+        Quick check if a cell is empty (contains no digit).
+        
+        Args:
+            cell: Cell image
+            
+        Returns:
+            True if cell is likely empty
+        """
+        # Simple threshold check
+        _, binary = cv2.threshold(cell, 127, 255, cv2.THRESH_BINARY_INV)
+        white_pixels = np.sum(binary > 127)
+        total_pixels = binary.size
+        
+        # If very few white pixels, it's empty
+        white_ratio = white_pixels / total_pixels
+        if white_ratio < self.empty_cell_threshold:
+            return True
+        
+        # Check center region for concentrated content
+        height, width = cell.shape[:2]
+        center_region = binary[height//4:(height*3)//4, width//4:(width*3)//4]
+        
+        if center_region.size > 0:
+            center_white_ratio = np.sum(center_region > 127) / center_region.size
+            
+            # If center has very few white pixels, it's likely empty
+            if center_white_ratio < self.empty_cell_threshold:
+                return True
+        
+        return False
+    
+    def _apply_test_time_augmentation(self, cell: ImageType) -> np.ndarray:
+        """
+        Apply test-time augmentation for improved accuracy.
+        
+        Args:
+            cell: Preprocessed cell image
+            
+        Returns:
+            Averaged prediction probabilities
+        """
+        if not self.use_tta or self.model_type != "enhanced":
+            # Simple prediction for legacy models or when TTA is disabled
+            input_data = cell.reshape(1, *self.input_shape)
+            return self.model.predict(input_data, verbose=0)[0]
+        
+        predictions = []
+        
+        # Original prediction
+        input_data = cell.reshape(1, *self.input_shape)
+        pred = self.model.predict(input_data, verbose=0)[0]
+        predictions.append(pred)
+        
+        # Small rotations
+        for angle in [-3, 3]:
+            center = (self.input_shape[0]//2, self.input_shape[1]//2)
+            M = cv2.getRotationMatrix2D(center, angle, 1)
+            rotated = cv2.warpAffine(cell.reshape(self.input_shape[:2]), M, self.input_shape[:2])
+            pred = self.model.predict(rotated.reshape(1, *self.input_shape), verbose=0)[0]
+            predictions.append(pred)
+        
+        # Small shifts
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            M = np.float32([[1, 0, dx], [0, 1, dy]])
+            shifted = cv2.warpAffine(cell.reshape(self.input_shape[:2]), M, self.input_shape[:2])
+            pred = self.model.predict(shifted.reshape(1, *self.input_shape), verbose=0)[0]
+            predictions.append(pred)
+        
+        # Small scale variations (only for enhanced models with larger input)
+        if self.input_shape[0] >= 32:
+            for scale in [0.9, 1.1]:
+                scaled = cv2.resize(cell.reshape(self.input_shape[:2]), None, fx=scale, fy=scale)
+                
+                # Crop or pad to original size
+                if scale > 1:
+                    # Crop center
+                    h, w = scaled.shape
+                    y = (h - self.input_shape[0]) // 2
+                    x = (w - self.input_shape[1]) // 2
+                    scaled = scaled[y:y+self.input_shape[0], x:x+self.input_shape[1]]
+                else:
+                    # Pad with zeros
+                    h, w = scaled.shape
+                    pad_y = (self.input_shape[0] - h) // 2
+                    pad_x = (self.input_shape[1] - w) // 2
+                    scaled = np.pad(scaled, ((pad_y, self.input_shape[0]-h-pad_y), 
+                                            (pad_x, self.input_shape[1]-w-pad_x)), 
+                                   mode='constant')
+                
+                pred = self.model.predict(scaled.reshape(1, *self.input_shape), verbose=0)[0]
+                predictions.append(pred)
+        
+        # Average all predictions
+        return np.mean(predictions, axis=0)
+    
+    def _is_empty_cell(self, processed_cell: ImageType) -> bool:
+        """
+        Check if a preprocessed cell is empty.
+        
+        Args:
+            processed_cell: Preprocessed cell image
+            
+        Returns:
+            True if cell is empty
+        """
+        # For enhanced preprocessing, empty cells return zeros
+        if self.model_type == "enhanced":
+            return np.sum(processed_cell) == 0
+        
+        # For legacy preprocessing, check white pixel ratio
+        if len(processed_cell.shape) > 2:
+            flat_cell = processed_cell.reshape(-1)
+        else:
+            flat_cell = processed_cell.flatten()
+            
+        white_ratio = np.sum(flat_cell > 0.5) / flat_cell.size
+        return white_ratio < self.empty_cell_threshold
+
     @robust_method(max_retries=2, timeout_sec=30.0)
     def recognize(self, cell_images: List[List[ImageType]]) -> Tuple[GridType, List[List[float]]]:
         """
-        Recognize digits in cell images using enhanced CNN.
+        Recognize digits in cell images using enhanced CNN with adaptive preprocessing.
         
         Args:
             cell_images: 2D list of cell images
@@ -410,6 +466,8 @@ class CNNDigitRecognizer(DigitRecognizerBase):
             digit_grid = [[0 for _ in range(9)] for _ in range(9)]
             confidence_grid = [[0.0 for _ in range(9)] for _ in range(9)]
             
+            logger.info(f"Recognizing digits using {self.model_type} model with {self.input_shape} input shape")
+            
             # Process each cell
             for i in range(9):
                 for j in range(9):
@@ -424,28 +482,37 @@ class CNNDigitRecognizer(DigitRecognizerBase):
                             confidence_grid[i][j] = 1.0  # High confidence it's empty
                             continue
                             
-                        # Preprocess cell image
+                        # Preprocess cell image using adaptive pipeline
                         processed_cell = self._preprocess_cell(cell)
                         
                         # Check if cell is empty
                         if self._is_empty_cell(processed_cell):
                             digit_grid[i][j] = 0
-                            confidence_grid[i][j] = self.empty_cell_threshold
+                            confidence_grid[i][j] = 0.99
                             continue
                             
-                        # Prepare input for model
-                        processed_cell = processed_cell.reshape(1, *self.input_shape)
-                        
-                        # Get prediction with probabilities
-                        probabilities = self.model.predict(processed_cell, verbose=0)[0]
+                        # Get prediction with optional test-time augmentation
+                        probabilities = self._apply_test_time_augmentation(processed_cell)
                         digit = np.argmax(probabilities)
                         confidence = probabilities[digit]
                         
-                        # Apply test-time augmentation if confidence is low
-                        if self.augment_at_runtime and confidence < self.confidence_threshold:
-                            augmented_predictions = self._predict_with_tta(cell)
-                            digit, confidence = augmented_predictions
-                            
+                        # Enhanced confidence thresholding for better accuracy
+                        if confidence < self.confidence_threshold:
+                            if self.model_type == "enhanced":
+                                # For enhanced models, check second-best prediction
+                                second_best_idx = np.argsort(probabilities)[-2]
+                                second_best_conf = probabilities[second_best_idx]
+                                
+                                # If second-best is very close, we're uncertain
+                                if second_best_conf > confidence * 0.8:
+                                    digit = 0  # Mark as empty when uncertain
+                                    confidence = 0.5
+                            else:
+                                # For legacy models, lower confidence threshold
+                                if confidence < 0.6:
+                                    digit = 0
+                                    confidence = 0.5
+                        
                         # Store results
                         digit_grid[i][j] = int(digit)
                         confidence_grid[i][j] = float(confidence)
@@ -459,184 +526,23 @@ class CNNDigitRecognizer(DigitRecognizerBase):
             # Validate output grid
             validate_grid_values(digit_grid)
             
+            # Log recognition statistics
+            recognized_count = sum(1 for row in digit_grid for digit in row if digit > 0)
+            avg_confidence = sum(confidence_grid[i][j] for i in range(9) for j in range(9) 
+                               if digit_grid[i][j] > 0) / max(1, recognized_count)
+            
+            logger.info(f"Recognized {recognized_count}/81 digits with average confidence {avg_confidence:.3f}")
+            
             return digit_grid, confidence_grid
             
         except Exception as e:
             if isinstance(e, DigitRecognitionError):
                 raise
             raise DigitRecognitionError(f"Error in CNN digit recognition: {str(e)}")
-    
-    def _preprocess_cell(self, cell: ImageType) -> ImageType:
-        """
-        Preprocess cell image for digit recognition.
-        
-        Args:
-            cell: Cell image
-            
-        Returns:
-            Preprocessed cell image
-        """
-        # Ensure grayscale
-        if len(cell.shape) > 2 and cell.shape[2] > 1:
-            gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = cell.copy()
-            
-        # Resize to expected input size
-        if gray.shape[0] != self.input_shape[0] or gray.shape[1] != self.input_shape[1]:
-            resized = cv2.resize(gray, (self.input_shape[0], self.input_shape[1]))
-        else:
-            resized = gray
-            
-        # Apply adaptive thresholding for printed digits
-        if np.max(resized) > 1:
-            # Apply slight Gaussian blur to reduce noise
-            blurred = cv2.GaussianBlur(resized, (3, 3), 0)
-            
-            # Adaptive threshold
-            binary = cv2.adaptiveThreshold(
-                blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 7, 2
-            )
-        else:
-            binary = resized * 255
-            
-        # Normalize pixel values to [0, 1]
-        normalized = binary.astype(np.float32) / 255.0
-        
-        # Reshape for model input
-        shaped = normalized.reshape(*self.input_shape[:2], 1)
-        
-        return shaped
-    
-    def _is_empty_cell(self, processed_cell: ImageType) -> bool:
-        """
-        Check if a cell is empty (contains no digit).
-        
-        Args:
-            processed_cell: Preprocessed cell image
-            
-        Returns:
-            True if cell is empty
-        """
-        # Calculate white pixel ratio (for binary image)
-        white_ratio = np.sum(processed_cell > 0.5) / processed_cell.size
-        
-        # Empty cells have very few white pixels
-        if white_ratio < 0.02:
-            return True
-            
-        # Check if white pixels are concentrated in the center
-        height, width = processed_cell.shape[:2]
-        center_region = processed_cell[
-            height // 4:(height * 3) // 4,
-            width // 4:(width * 3) // 4
-        ]
-        
-        center_white_ratio = np.sum(center_region > 0.5) / center_region.size
-        
-        # If center has significantly more white pixels than the whole image,
-        # it likely contains a digit
-        if center_white_ratio > white_ratio * 1.5:
-            return False
-            
-        return True
-    
-    def _predict_with_tta(self, cell: ImageType) -> Tuple[int, float]:
-        """
-        Predict digit with test-time augmentation for improved accuracy.
-        
-        Args:
-            cell: Original cell image
-            
-        Returns:
-            Tuple of (predicted digit, confidence)
-        """
-        # Number of augmentations
-        num_augmentations = 5
-        predictions = []
-        
-        # Preprocess original cell
-        processed_cell = self._preprocess_cell(cell)
-        original_input = processed_cell.reshape(1, *self.input_shape)
-        
-        # Get original prediction
-        original_probs = self.model.predict(original_input, verbose=0)[0]
-        predictions.append(original_probs)
-        
-        # Create augmentations optimized for printed digits
-        for i in range(num_augmentations):
-            # Apply transformations suitable for printed digits
-            augmented = self._augment_cell_printed(cell)
-            processed = self._preprocess_cell(augmented)
-            aug_input = processed.reshape(1, *self.input_shape)
-            
-            # Get prediction
-            aug_probs = self.model.predict(aug_input, verbose=0)[0]
-            predictions.append(aug_probs)
-            
-        # Average predictions
-        avg_probs = np.mean(predictions, axis=0)
-        digit = np.argmax(avg_probs)
-        confidence = avg_probs[digit]
-        
-        return int(digit), float(confidence)
-    
-    def _augment_cell_printed(self, cell: ImageType) -> ImageType:
-        """
-        Apply augmentation suitable for printed digits.
-        
-        Args:
-            cell: Cell image
-            
-        Returns:
-            Augmented cell image
-        """
-        # Create a copy
-        augmented = cell.copy()
-        
-        # Apply small rotation (printed digits may be slightly tilted)
-        angle = np.random.uniform(-5, 5)
-        height, width = cell.shape[:2]
-        center = (width // 2, height // 2)
-        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-        augmented = cv2.warpAffine(augmented, rotation_matrix, (width, height))
-        
-        # Apply small scaling (simulate distance/zoom variations)
-        scale = np.random.uniform(0.9, 1.1)
-        scaled_width = int(width * scale)
-        scaled_height = int(height * scale)
-        scaled = cv2.resize(augmented, (scaled_width, scaled_height))
-        
-        # Pad or crop to original size
-        if scale > 1.0:
-            # Crop center
-            x_start = (scaled_width - width) // 2
-            y_start = (scaled_height - height) // 2
-            augmented = scaled[y_start:y_start+height, x_start:x_start+width]
-        else:
-            # Pad with zeros
-            pad_x = (width - scaled_width) // 2
-            pad_y = (height - scaled_height) // 2
-            
-            augmented = np.zeros_like(cell)
-            augmented[pad_y:pad_y+scaled_height, pad_x:pad_x+scaled_width] = scaled
-            
-        # Apply small shift (printed digits may not be perfectly centered)
-        shift_x = np.random.randint(-2, 3)
-        shift_y = np.random.randint(-2, 3)
-        translation_matrix = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-        augmented = cv2.warpAffine(augmented, translation_matrix, (width, height))
-        
-        # Add slight noise (simulate scanner/camera noise)
-        noise = np.random.normal(0, 5, augmented.shape).astype(np.uint8)
-        augmented = cv2.add(augmented, noise)
-        
-        return augmented
-    
+
     def train(self, cell_images: List[ImageType], labels: List[int]) -> None:
         """
-        Train the enhanced CNN digit recognizer.
+        Train the CNN digit recognizer (placeholder for future implementation).
         
         Args:
             cell_images: List of cell images
@@ -645,89 +551,8 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         Raises:
             DigitRecognitionError: If training fails
         """
-        try:
-            # Validate inputs
-            if not cell_images or not labels or len(cell_images) != len(labels):
-                raise ValueError("Invalid training data")
-                
-            logger.info(f"Training enhanced CNN digit recognizer with {len(cell_images)} images")
-            
-            # Preprocess images
-            processed_images = np.array([self._preprocess_cell(cell) for cell in cell_images])
-            
-            # Convert labels to one-hot encoding
-            labels_array = np.array(labels)
-            labels_one_hot = tf.keras.utils.to_categorical(labels_array, num_classes=self.num_classes)
-            
-            # Create data generator with augmentation
-            datagen = self._create_augmentation_generator()
-            
-            # Create train and validation generators
-            train_generator = datagen.flow(
-                processed_images, labels_one_hot,
-                batch_size=32,
-                subset='training'
-            )
-            
-            validation_generator = datagen.flow(
-                processed_images, labels_one_hot,
-                batch_size=32,
-                subset='validation'
-            )
-            
-            # Apply mixup to training generator if enabled
-            if self.use_mixup:
-                original_flow = train_generator.next
-                def mixup_flow():
-                    x_batch, y_batch = original_flow()
-                    return self._mixup_batch(x_batch, y_batch, self.mixup_alpha)
-                train_generator.next = mixup_flow
-            
-            # Configure callbacks
-            callbacks = [
-                EarlyStopping(
-                    patience=15,
-                    restore_best_weights=True,
-                    monitor='val_loss'
-                ),
-                ModelCheckpoint(
-                    'temp_digit_recognizer.h5',
-                    save_best_only=True,
-                    monitor='val_accuracy',
-                    mode='max'
-                ),
-                LearningRateScheduler(self._cosine_annealing_schedule)
-            ]
-            
-            # Train model
-            history = self.model.fit(
-                train_generator,
-                validation_data=validation_generator,
-                epochs=100,  # More epochs with early stopping
-                callbacks=callbacks,
-                verbose=1
-            )
-            
-            # Load best model
-            if os.path.exists('temp_digit_recognizer.h5'):
-                self.model = load_model(
-                    'temp_digit_recognizer.h5',
-                    custom_objects={
-                        '_label_smoothing_loss': self._label_smoothing_loss,
-                        '_top_2_accuracy': self._top_2_accuracy
-                    }
-                )
-                os.remove('temp_digit_recognizer.h5')
-                
-            self.model_loaded = True
-            
-            # Log final performance
-            final_val_acc = history.history['val_accuracy'][-1]
-            logger.info(f"Enhanced CNN training completed. Final validation accuracy: {final_val_acc:.4f}")
-            
-        except Exception as e:
-            logger.error(f"Error training enhanced CNN digit recognizer: {str(e)}")
-            raise DigitRecognitionError(f"Failed to train digit recognizer: {str(e)}")
+        logger.warning("Training not implemented for enhanced CNN recognizer. Use external training script.")
+        raise DigitRecognitionError("Training not implemented. Use external training pipeline.")
 
 
 class SVMDigitRecognizer(DigitRecognizerBase):
@@ -1636,13 +1461,8 @@ class RobustDigitRecognizer(DigitRecognizerBase):
         Raises:
             DigitRecognitionError: If training fails
         """
-        # Train CNN recognizer
-        try:
-            logger.info("Training CNN digit recognizer")
-            self.cnn_recognizer.train(cell_images, labels)
-        except Exception as e:
-            logger.error(f"Failed to train CNN recognizer: {str(e)}")
-            # Don't raise error, try other models
+        # CNN recognizer training is handled externally
+        logger.info("CNN training handled by external training script")
             
         # Train SVM recognizer
         try:
@@ -1660,10 +1480,10 @@ class RobustDigitRecognizer(DigitRecognizerBase):
             logger.error(f"Failed to train template matching recognizer: {str(e)}")
             # Don't raise error
             
-        # If all failed, raise error
+        # Check if at least one model is loaded
         if (not self.cnn_recognizer.model_loaded and 
             not self.svm_recognizer.model_loaded and 
             not self.template_recognizer.model_loaded):
-            raise DigitRecognitionError("Failed to train all digit recognizers")
+            raise DigitRecognitionError("Failed to load any digit recognizers")
             
         logger.info("Completed training digit recognizers")
