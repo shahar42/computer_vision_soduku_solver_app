@@ -63,8 +63,8 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         self.input_shape = (28, 28, 1)  # Will be updated based on model
         
         # Recognition parameters
-        self.confidence_threshold = self.settings.get("confidence_threshold", 0.1)
-        self.empty_cell_threshold = self.settings.get("empty_cell_threshold", 0.02)
+        self.confidence_threshold = self.settings.get("confidence_threshold", 0.6)
+        self.empty_cell_threshold = self.settings.get("empty_cell_threshold", 0.05)
         self.enhanced_confidence_threshold = 0.85  # Higher threshold for enhanced models
         
         # Model state
@@ -244,8 +244,13 @@ class CNNDigitRecognizer(DigitRecognizerBase):
     
     def _preprocess_cell_legacy(self, cell: ImageType) -> ImageType:
         """
-        Emergency fix: Bypass complex preprocessing that's destroying digits.
-        Use minimal processing and let the model handle the rest.
+        Expert preprocessing pipeline with improved digit detection and empty cell handling.
+        
+        Args:
+            cell: Cell image
+            
+        Returns:
+            Preprocessed cell image ready for legacy model
         """
         # Ensure grayscale
         if len(cell.shape) > 2 and cell.shape[2] > 1:
@@ -253,26 +258,113 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         else:
             gray = cell.copy()
         
-        # Simple resize to model input size
-        resized = cv2.resize(gray, (self.input_shape[0], self.input_shape[1]), 
-                            interpolation=cv2.INTER_AREA)
+        # Store original size for later
+        original_h, original_w = gray.shape
         
-        # Very light preprocessing only if needed
-        # Option 1: Just normalize (recommended first try)
-        normalized = resized.astype(np.float32) / 255.0
+        # Work with larger size for better processing
+        working_size = 56  # Double the model input size for better processing
+        working = cv2.resize(gray, (working_size, working_size), interpolation=cv2.INTER_CUBIC)
         
-        # Option 2: If you need some contrast enhancement, use this instead:
-        # enhanced = cv2.equalizeHist(resized)
-        # normalized = enhanced.astype(np.float32) / 255.0
+        # Step 1: Denoise while preserving edges
+        denoised = cv2.bilateralFilter(working, 9, 75, 75)
+        
+        # Step 2: Normalize the background
+        # Use morphological operations to estimate background
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        background = cv2.morphologyEx(denoised, cv2.MORPH_DILATE, kernel_large)
+        
+        # Subtract background to normalize lighting
+        normalized = cv2.subtract(background, denoised)
+        
+        # Step 3: Enhance contrast using CLAHE
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(normalized)
+        
+        # Step 4: Smart thresholding
+        # First, check if cell is likely empty by analyzing intensity distribution
+        mean_intensity = np.mean(enhanced)
+        std_intensity = np.std(enhanced)
+        
+        # Empty cells typically have low variation
+        if std_intensity < 8:  # Threshold for empty cell detection
+            # Return empty cell
+            empty = np.zeros((self.input_shape[0], self.input_shape[1]), dtype=np.float32)
+            if len(self.input_shape) == 3 and self.input_shape[2] == 1:
+                empty = empty.reshape(self.input_shape[0], self.input_shape[1], 1)
+            return empty
+        
+        # Step 5: Adaptive thresholding with optimal parameters
+        # Use smaller block size for finer detail
+        binary = cv2.adaptiveThreshold(
+            enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY_INV, 9, 4  # Smaller block size, adjusted C
+        )
+        
+        # Step 6: Morphological cleanup
+        # Remove small noise
+        kernel_small = np.ones((2, 2), np.uint8)
+        cleaned = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_small)
+        
+        # Fill small gaps in digits
+        kernel_close = np.ones((3, 3), np.uint8)
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel_close)
+        
+        # Step 7: Find and center the digit
+        contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            # Find the largest contour (likely the digit)
+            largest_contour = max(contours, key=cv2.contourArea)
+            
+            # Get bounding box
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            
+            # Check if contour is significant enough to be a digit
+            area_ratio = cv2.contourArea(largest_contour) / (working_size * working_size)
+            aspect_ratio = w / h if h > 0 else 0
+            
+            if area_ratio > 0.02 and 0.2 < aspect_ratio < 2.0:  # Reasonable digit proportions
+                # Add padding around the digit
+                pad = 4
+                x = max(0, x - pad)
+                y = max(0, y - pad)
+                w = min(working_size - x, w + 2*pad)
+                h = min(working_size - y, h + 2*pad)
+                
+                # Extract digit region
+                digit_region = cleaned[y:y+h, x:x+w]
+                
+                # Create centered output
+                output = np.zeros((working_size, working_size), dtype=np.uint8)
+                
+                # Calculate centering position
+                y_offset = (working_size - h) // 2
+                x_offset = (working_size - w) // 2
+                
+                # Place digit in center
+                output[y_offset:y_offset+h, x_offset:x_offset+w] = digit_region
+                
+                # Resize to model input size
+                final = cv2.resize(output, (self.input_shape[0], self.input_shape[1]), 
+                                 interpolation=cv2.INTER_AREA)
+            else:
+                # Not a valid digit, treat as empty
+                final = np.zeros((self.input_shape[0], self.input_shape[1]), dtype=np.uint8)
+        else:
+            # No contours found, empty cell
+            final = np.zeros((self.input_shape[0], self.input_shape[1]), dtype=np.uint8)
+        
+        # Normalize to [0, 1]
+        normalized_output = final.astype(np.float32) / 255.0
         
         # Reshape for model input
         if len(self.input_shape) == 3 and self.input_shape[2] == 1:
-            shaped = normalized.reshape(self.input_shape[0], self.input_shape[1], 1)
+            shaped = normalized_output.reshape(self.input_shape[0], self.input_shape[1], 1)
         else:
-            shaped = normalized
+            shaped = normalized_output
         
         return shaped
-    
+
     def _is_empty_cell_fast(self, cell: ImageType) -> bool:
         """
         Improved empty cell detection that handles real-world variations.
@@ -293,7 +385,7 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         mean_val = np.mean(cell)
         
         # Very uniform cells are likely empty
-        if std_dev < 10:
+        if std_dev < 5:
             return True
         
         # Method 2: Edge detection
@@ -315,7 +407,7 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         foreground_ratio = np.sum(binary > 127) / binary.size
         
         # Very little foreground indicates empty cell
-        if foreground_ratio < 0.02:
+        if foreground_ratio < 0.05:
             return True
         
         # Method 4: Center region analysis
@@ -368,7 +460,6 @@ class CNNDigitRecognizer(DigitRecognizerBase):
         
         # If we reach here, cell likely contains a digit
         return False
-    
     def _apply_test_time_augmentation(self, cell: ImageType) -> np.ndarray:
         """
         Apply test-time augmentation for improved accuracy.
@@ -454,7 +545,7 @@ class CNNDigitRecognizer(DigitRecognizerBase):
             flat_cell = processed_cell.flatten()
             
         white_ratio = np.sum(flat_cell > 0.1) / flat_cell.size
-        return white_ratio < 0.02
+        return white_ratio < 0.05
 
     @robust_method(max_retries=2, timeout_sec=30.0)
     def recognize(self, cell_images: List[List[ImageType]]) -> Tuple[GridType, List[List[float]]]:

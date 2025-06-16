@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Any, Optional
 
-from config import initialize_settings
+from config.settings import initialize_settings
 from utils.error_handling import setup_exception_handling
 from utils.visualization import (
     visualize_digit_grid, visualize_solution, create_visualization_report,

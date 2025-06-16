@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     # Intersection detector settings
     "intersection_detector": {
         "model_path": "data/models/intersection_detector.h5",
-        "confidence_threshold": 0.8, # Matches notebook
+        "confidence_threshold": 0.9, # Matches notebook
         "nms_threshold": 3,
         "min_intersections": 70,  # Minimum number of intersections to proceed
         "detection_methods": ["cnn", "hough", "adaptive_threshold"], # Matches notebook
@@ -35,11 +35,11 @@ DEFAULT_CONFIG = {
     # Grid reconstructor settings
     "grid_reconstructor": {
         "ransac_iterations": 1070,
-        "ransac_threshold": 5,
-        "min_line_points": 5,
+        "ransac_threshold": 6,
+        "min_line_points": 6,
         "grid_size": 9,
-        "min_line_separation": 20,  # Minimum pixels between grid lines
-        "max_angle_deviation": 8,  # Maximum angle deviation in degrees
+        "min_line_separation": 30,  # Minimum pixels between grid lines
+        "max_angle_deviation": 5,  # Maximum angle deviation in degrees
         "use_homography": True,
         "use_grid_refinement": True,
         "max_perspective_distortion": 45,  # Max perspective angle in degrees
@@ -53,11 +53,11 @@ DEFAULT_CONFIG = {
     # Cell extractor settings
     "cell_extractor": {
         "cell_size": 28,  # Output cell size in pixels, matches notebook
-        "border_padding": 0.08,  # Updated from 0.05 to match notebook
+        "border_padding": 0.05,  # Reduced padding to preserve digit content
         "perspective_correction": True, # Matches notebook
-        "contrast_enhancement": False, # Matches notebook
-        "noise_reduction": False, # Matches notebook
-        "adaptive_thresholding": False, # Matches notebook
+        "contrast_enhancement": True, # Matches notebook
+        "noise_reduction": True, # Matches notebook
+        "adaptive_thresholding": True, # Matches notebook
         "histogram_equalization": False,
         "use_multiple_extractors": False,  # Try different extraction methods, matches notebook
         "extraction_mode": "preserve" # Added from notebook
@@ -66,14 +66,14 @@ DEFAULT_CONFIG = {
     # Digit recognizer settings
     "digit_recognizer": {
         "model_path": "data/models/digit_recognizer.h5",
-        "confidence_threshold": 0.82,
+        "confidence_threshold": 0.45,
         "use_multiple_models": True,
         "use_ensemble": True,
-        "empty_cell_threshold": 0.90,  # Threshold to consider a cell empty
+        "empty_cell_threshold": 0.7,  # Threshold to consider a cell empty
         "augment_at_runtime": True,  # Apply augmentation during recognition
         "fallback_models": ["tflite", "svm", "template_matching"],
-        "digit_height_min_ratio": 0.3,  # Minimum height ratio relative to cell
-        "digit_width_min_ratio": 0.1,  # Minimum width ratio relative to cell
+        "digit_height_min_ratio": 0.4,  # Minimum height ratio relative to cell
+        "digit_width_min_ratio": 0.2,  # Minimum width ratio relative to cell
     },
 
     # Sudoku solver settings
@@ -150,7 +150,7 @@ CRITICAL_THRESHOLDS = {
     "intersection_detector.confidence_threshold": 0.4,
     "intersection_detector.min_intersections": 40,
     "grid_reconstructor.ransac_iterations": 500,
-    "digit_recognizer.confidence_threshold": 0.5,
+    "digit_recognizer.confidence_threshold": 0.3,
 }
 
 # Default error messages

@@ -18,12 +18,12 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from config import initialize_settings
+from config.settings import initialize_settings
 from utils.error_handling import setup_exception_handling
 from utils.validation import validate_image_file
 from pipeline import SudokuRecognizerPipeline
 from utils.visualization import (
-    visualize_intersection, visualize_grid, visualize_cells,
+    visualize_intersections, visualize_grid, visualize_cells,
     visualize_digit_grid, visualize_solution, overlay_solution_on_image
 )
 

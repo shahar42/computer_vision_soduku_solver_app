@@ -65,32 +65,32 @@ class BoardDetector:
             logger.error(f"Error loading board detection model: {str(e)}")
             return False
     
-    def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
+    def preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float, int, int]:
         """
-        Preprocess image for board detection (416x416 with padding).
-        
-        Args:
-            image: Input image
-            
-        Returns:
-            Tuple of (preprocessed_image, scale_factor)
+        Preprocess image for board detection (matching training preprocessing).
         """
         height, width = image.shape[:2]
         
+        # Convert BGR to RGB (matching training)
+        if len(image.shape) == 3 and image.shape[2] == 3:
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        else:
+            image_rgb = image
+        
         # Calculate scale to fit within 416x416 while maintaining aspect ratio
-        scale = min(self.model_input_size / width, self.model_input_size / height)
+        scale = self.model_input_size / max(width, height)
         
         # Resize image
         new_width = int(width * scale)
         new_height = int(height * scale)
-        resized = cv2.resize(image, (new_width, new_height))
+        resized = cv2.resize(image_rgb, (new_width, new_height))
         
         # Create padded image
         padded = np.zeros((self.model_input_size, self.model_input_size, 3), dtype=np.uint8)
         
         # Calculate padding offsets to center the image
-        y_offset = (self.model_input_size - new_height) // 2
         x_offset = (self.model_input_size - new_width) // 2
+        y_offset = (self.model_input_size - new_height) // 2
         
         # Place resized image in center of padded image
         padded[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized
@@ -103,13 +103,6 @@ class BoardDetector:
     def detect(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int, float]]:
         """
         Detect Sudoku board in image.
-        
-        Args:
-            image: Input image
-            
-        Returns:
-            Tuple of (x1, y1, x2, y2, confidence) in original image coordinates,
-            or None if no valid detection
         """
         if self.model is None:
             logger.warning("Board detection model not loaded")
@@ -131,24 +124,45 @@ class BoardDetector:
                 logger.info(f"Board detection confidence too low: {confidence:.3f} < {self.confidence_threshold}")
                 return None
             
-            # Convert from normalized coordinates to preprocessed image coordinates
+            # FIXED: Convert from normalized [0,1] coordinates to preprocessed image coordinates
             x1_prep = x1_norm * self.model_input_size
             y1_prep = y1_norm * self.model_input_size
             x2_prep = x2_norm * self.model_input_size
             y2_prep = y2_norm * self.model_input_size
             
-            # Convert from preprocessed coordinates to original image coordinates
-            x1_orig = int((x1_prep - x_offset) / scale)
-            y1_orig = int((y1_prep - y_offset) / scale)
-            x2_orig = int((x2_prep - x_offset) / scale)
-            y2_orig = int((y2_prep - y_offset) / scale)
+            # FIXED: Account for preprocessing transformations
+            # The model was trained on images that were:
+            # 1. Scaled to fit within 416x416
+            # 2. Padded to center the image
+            
+            # Get original image dimensions
+            height, width = image.shape[:2]
+            
+            # Calculate the actual scale used (same as training)
+            actual_scale = self.model_input_size / max(height, width)
+            
+            # Calculate actual padding (same as training)
+            new_width = int(width * actual_scale)
+            new_height = int(height * actual_scale)
+            actual_x_offset = (self.model_input_size - new_width) // 2
+            actual_y_offset = (self.model_input_size - new_height) // 2
+            
+            # Transform back to original coordinates
+            x1_orig = int((x1_prep - actual_x_offset) / actual_scale)
+            y1_orig = int((y1_prep - actual_y_offset) / actual_scale)
+            x2_orig = int((x2_prep - actual_x_offset) / actual_scale)
+            y2_orig = int((y2_prep - actual_y_offset) / actual_scale)
             
             # Clamp to image boundaries
-            height, width = image.shape[:2]
             x1_orig = max(0, min(x1_orig, width - 1))
             y1_orig = max(0, min(y1_orig, height - 1))
             x2_orig = max(0, min(x2_orig, width - 1))
             y2_orig = max(0, min(y2_orig, height - 1))
+            
+            # Validate bounding box
+            if x2_orig <= x1_orig or y2_orig <= y1_orig:
+                logger.warning(f"Invalid bounding box: ({x1_orig}, {y1_orig}, {x2_orig}, {y2_orig})")
+                return None
             
             logger.info(f"Board detected with confidence {confidence:.3f}: ({x1_orig}, {y1_orig}, {x2_orig}, {y2_orig})")
             

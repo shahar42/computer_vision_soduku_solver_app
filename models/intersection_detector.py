@@ -51,10 +51,10 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         self.canny_low = 50
         self.canny_high = 150
 
-        # Parameters for Hough transform
-        self.hough_threshold = 100
-        self.hough_min_line_length = 100
-        self.hough_max_line_gap = 10
+        # Parameters for Hough transform (optimized for performance)
+        self.hough_threshold = 120  # Increased to detect fewer, stronger lines
+        self.hough_min_line_length = 150  # Increased to focus on longer lines
+        self.hough_max_line_gap = 15  # Slightly increased for better line connection
 
         # Parameters for intersection clustering
         self.cluster_distance = 10
@@ -138,7 +138,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
 
         return []
 
-    @robust_method(max_retries=2, timeout_sec=56.0)
+    @robust_method(max_retries=2, timeout_sec=30.0)
     def detect(self, image: ImageType) -> List[PointType]:
 
         try:
@@ -378,7 +378,7 @@ class CVIntersectionDetector(IntersectionDetectorBase):
 
     def _find_line_intersections(self, lines: np.ndarray) -> List[PointType]:
         """
-        Find intersection points between lines.
+        Find intersection points between lines with performance optimization.
 
         Args:
             lines: Array of lines from HoughLinesP
@@ -388,18 +388,49 @@ class CVIntersectionDetector(IntersectionDetectorBase):
         """
         intersections = []
 
+        # Limit number of lines to process for performance
+        max_lines = 150  # Reduced from potentially hundreds
+        if len(lines) > max_lines:
+            # Sort lines by length and keep the longest ones
+            line_lengths = []
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                line_lengths.append(length)
+            
+            # Get indices of longest lines
+            longest_indices = np.argsort(line_lengths)[-max_lines:]
+            lines = lines[longest_indices]
+
         # Convert lines to a list of line segments
         line_segments = []
         for line in lines:
             x1, y1, x2, y2 = line[0]
             line_segments.append(((x1, y1), (x2, y2)))
 
-        # Calculate intersections between all pairs of lines
-        for i in range(len(line_segments)):
-            for j in range(i + 1, len(line_segments)):
+        # Separate horizontal and vertical lines for faster processing
+        horizontal_lines = []
+        vertical_lines = []
+        diagonal_lines = []
+        
+        for i, ((x1, y1), (x2, y2)) in enumerate(line_segments):
+            dx = abs(x2 - x1)
+            dy = abs(y2 - y1)
+            
+            if dy < dx * 0.3:  # Nearly horizontal
+                horizontal_lines.append(i)
+            elif dx < dy * 0.3:  # Nearly vertical
+                vertical_lines.append(i)
+            else:  # Diagonal
+                diagonal_lines.append(i)
+
+        # Only calculate intersections between horizontal and vertical lines (most important)
+        # This reduces complexity from O(n²) to O(h*v) where h,v << n
+        for h_idx in horizontal_lines:
+            for v_idx in vertical_lines:
                 # Get line segments
-                (x1_1, y1_1), (x1_2, y1_2) = line_segments[i]
-                (x2_1, y2_1), (x2_2, y2_2) = line_segments[j]
+                (x1_1, y1_1), (x1_2, y1_2) = line_segments[h_idx]
+                (x2_1, y2_1), (x2_2, y2_2) = line_segments[v_idx]
 
                 # Calculate intersection
                 intersection = self._line_intersection(
@@ -409,6 +440,27 @@ class CVIntersectionDetector(IntersectionDetectorBase):
 
                 if intersection:
                     intersections.append(intersection)
+
+        # If we have few intersections, also consider diagonal intersections
+        if len(intersections) < 50:
+            # Add some diagonal-horizontal and diagonal-vertical intersections
+            max_diagonal_checks = min(20, len(diagonal_lines))
+            for i, d_idx in enumerate(diagonal_lines[:max_diagonal_checks]):
+                for h_idx in horizontal_lines[:10]:  # Limit to first 10 horizontal lines
+                    intersection = self._line_intersection(
+                        line_segments[d_idx][0], line_segments[d_idx][1],
+                        line_segments[h_idx][0], line_segments[h_idx][1]
+                    )
+                    if intersection:
+                        intersections.append(intersection)
+                
+                for v_idx in vertical_lines[:10]:  # Limit to first 10 vertical lines
+                    intersection = self._line_intersection(
+                        line_segments[d_idx][0], line_segments[d_idx][1],
+                        line_segments[v_idx][0], line_segments[v_idx][1]
+                    )
+                    if intersection:
+                        intersections.append(intersection)
 
         return intersections
 
@@ -706,7 +758,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         self.confidence_threshold = self.settings.get("confidence_threshold", 0.77)
         self.patch_size = self.settings.get("patch_size", 15)
 
-        self.stride = self.patch_size // 4  # Stride for sliding window
+        self.stride = self.patch_size  # Stride for sliding window (no overlap for performance)
         self.x_correction = self.settings.get("x_correction", 0) # Default to 0 if not in settings
         self.y_correction = self.settings.get("y_correction", 0) # Default to 0 if not in settings
 
@@ -813,7 +865,7 @@ class CNNIntersectionDetector(IntersectionDetectorBase):
         normalized = image.astype(np.float32) / 255.0
         return normalized
 
-    @robust_method(max_retries=2, timeout_sec=80.0)
+    @robust_method(max_retries=2, timeout_sec=30.0)
     def detect(self, image: ImageType) -> List[PointType]:
         """
         Detect grid line intersections using CNN.

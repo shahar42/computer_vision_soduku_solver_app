@@ -520,6 +520,20 @@ class SudokuRecognizerPipeline:
                 except Exception as e:
                     logger.warning(f"Board detection error: {str(e)}. Falling back to intersection-only method")
 
+            # In pipeline.py, after board detection:
+            if board_bbox is not None:
+                x1, y1, x2, y2 = board_bbox
+                board_width = x2 - x1
+                board_height = y2 - y1
+                board_area_ratio = (board_width * board_height) / (image.shape[0] * image.shape[1])
+                
+                logger.info(f"Board dimensions: {board_width}x{board_height}")
+                logger.info(f"Image dimensions: {image.shape[1]}x{image.shape[0]}")
+                logger.info(f"Board covers {board_area_ratio:.1%} of image")
+                
+                # If board covers more than 90% of image, something's wrong
+                if board_area_ratio > 0.9:
+                    logger.warning("Board detection may be incorrect - covers too much of image")
             # Step 2: Detect intersections (always needed)
             intersections = self.intersection_detector.detect(image)
 
