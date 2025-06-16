@@ -16,6 +16,18 @@ venv310/
 uploads/
 results/
 
+# Image files
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.svg
+*.webp
+*.ico
+*.tiff
+*.tif
+
 # ML model files
 *.pkl
 # Additional model formats
