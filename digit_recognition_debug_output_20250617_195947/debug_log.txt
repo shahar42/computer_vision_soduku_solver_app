@@ -1,0 +1,61 @@
+[19:59:47] INFO: ============================================================
+[19:59:47] INFO: TEST 1: MODEL FILE VERIFICATION
+[19:59:47] INFO: ============================================================
+[19:59:47] INFO: ✅ CNN Model: digit_recognizer.h5
+[19:59:47] INFO:    Path: /home/shahar42/git2/Git_soduku/data/models/digit_recognizer.h5
+[19:59:47] INFO:    Size: 5.43 MB
+[19:59:47] INFO:    Modified: Tue Jun 17 01:41:00 2025
+[19:59:47] INFO:    Age: 18.3 hours ago
+[19:59:47] INFO: ✅ SVM Model: digit_recognizer_svm.pkl
+[19:59:47] INFO:    Path: /home/shahar42/git2/Git_soduku/data/models/digit_recognizer_svm.pkl
+[19:59:47] INFO:    Size: 23.32 MB
+[19:59:47] INFO:    Modified: Tue Jun 17 01:40:46 2025
+[19:59:47] INFO:    Age: 18.3 hours ago
+[19:59:47] INFO: ✅ Template Model: digit_recognizer_template.pkl
+[19:59:47] INFO:    Path: /home/shahar42/git2/Git_soduku/data/models/digit_recognizer_template.pkl
+[19:59:47] INFO:    Size: 1.36 MB
+[19:59:47] INFO:    Modified: Tue Jun 17 01:40:46 2025
+[19:59:47] INFO:    Age: 18.3 hours ago
+[19:59:47] INFO: ============================================================
+[19:59:47] INFO: TEST 2: MODEL LOADING
+[19:59:47] INFO: ============================================================
+[19:59:47] INFO: 🔍 Attempting to load models from: /home/shahar42/git2/Git_soduku/data/models/digit_recognizer.h5
+[19:59:47] INFO: ✅ robust_recognizer: True
+[19:59:47] INFO: ✅ cnn_loaded: True
+[19:59:47] INFO: ✅ svm_loaded: True
+[19:59:47] INFO: ✅ template_loaded: True
+[19:59:47] INFO: 🔍 CNN Model Architecture:
+[19:59:47] INFO:    Input shape: (None, 28, 28, 1)
+[19:59:47] INFO:    Output shape: (None, 10)
+[19:59:47] INFO:    Total parameters: 1,735,178
+[19:59:47] INFO:    Model type: legacy
+[19:59:48] INFO: ✅ CNN Model inference test passed
+[19:59:48] INFO:    Output shape: (1, 10)
+[19:59:48] INFO:    Output range: [0.088, 0.126]
+[19:59:48] INFO: 🔍 Confidence Thresholds:
+[19:59:48] INFO:    CNN confidence threshold: 0.45
+[19:59:48] INFO:    CNN empty cell threshold: 0.7
+[19:59:48] INFO:    SVM confidence threshold: 0.45
+[19:59:48] INFO:    Template confidence threshold: 0.45
+[19:59:48] INFO: ============================================================
+[19:59:48] INFO: TEST 3: PIPELINE CELL EXTRACTION
+[19:59:48] INFO: ============================================================
+[19:59:48] INFO: 📷 Processing test image: image1080.jpg
+[19:59:48] INFO: ✅ Pipeline models loaded successfully
+[19:59:48] INFO: 📊 Original image shape: (1280, 960, 3)
+[20:00:51] ERROR: ❌ Pipeline processing error: 'success'
+[20:00:51] INFO: ============================================================
+[20:00:51] INFO: TEST 4: DIRECT MODEL PREDICTIONS
+[20:00:51] INFO: ============================================================
+[20:00:51] ERROR: ❌ Prerequisites missing for direct model test
+[20:00:51] INFO: ============================================================
+[20:00:51] INFO: TEST 5: PREPROCESSING COMPARISON
+[20:00:51] INFO: ============================================================
+[20:00:51] ERROR: ❌ Prerequisites missing for preprocessing comparison
+[20:00:51] INFO: ============================================================
+[20:00:51] INFO: GENERATING SUMMARY REPORT
+[20:00:51] INFO: ============================================================
+[20:00:51] INFO: 📋 Summary Report Generated:
+[20:00:51] INFO:    Model files checked: 3
+[20:00:51] INFO:    Debug files created: 1
+[20:00:51] INFO:    Output directory: digit_recognition_debug_output_20250617_195947
